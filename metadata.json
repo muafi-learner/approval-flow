@@ -1,0 +1,6 @@
+{
+  "name": "Approval Management System",
+  "description": "Web-based approval workflow management system with one-click auto-signing in PDF documents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
