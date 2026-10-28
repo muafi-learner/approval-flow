@@ -9,12 +9,22 @@ try {
 }
 
 export interface AutoSignResult {
-  success: boolean; signedPdfUrl: string; signedAt: string; detectedPage: number; signedPages: number[];
-  totalSlotsSigned: number; coordinates: { x: number; y: number; width: number; height: number };
-  detectionMethod: 'box_fitted_contain' | 'layout_slot_matched' | 'dynamic_margin_shift'; auditStamp: string; error?: string;
+  success: boolean;
+  signedPdfUrl: string;
+  signedAt: string;
+  detectedPage: number;
+  signedPages: number[];
+  totalSlotsSigned: number;
+  coordinates: { x: number; y: number; width: number; height: number };
+  detectionMethod: 'box_fitted_contain' | 'layout_slot_matched' | 'dynamic_margin_shift';
+  auditStamp: string;
+  error?: string;
 }
 
-function drawDigitalStamp(page: PDFPage, signatureImage: PDFImage, approver: ApproverStep, requestId: string, x: number, y: number, fontRegular: PDFFont, fontBold: PDFFont, category: 'Design' | 'WO Existing') {
+function drawDigitalStamp(
+  page: PDFPage, signatureImage: PDFImage, approver: ApproverStep, requestId: string, 
+  x: number, y: number, fontRegular: PDFFont, fontBold: PDFFont, category: 'Design' | 'WO Existing'
+) {
   if (category === 'Design') {
     const DESIGN_STAMP_W = 55; const DESIGN_STAMP_H = 45;
     const sigDims = signatureImage.scale(1.0);
@@ -23,13 +33,23 @@ function drawDigitalStamp(page: PDFPage, signatureImage: PDFImage, approver: App
     let sigW = maxSigW; let sigH = sigW / aspect;
     if (sigH > maxSigH) { sigH = maxSigH; sigW = sigH * aspect; }
     const signatureYOffset = 6;
-    page.drawImage(signatureImage, { x: x + (DESIGN_STAMP_W - sigW) / 2, y: y + DESIGN_STAMP_H - sigH - 2 + signatureYOffset, width: sigW, height: sigH });
+    
+    page.drawImage(signatureImage, { 
+      x: x + (DESIGN_STAMP_W - sigW) / 2, 
+      y: y + DESIGN_STAMP_H - sigH - 2 + signatureYOffset, 
+      width: sigW, height: sigH 
+    });
+    
     const firstName = approver.userName.trim().split(/\s+/)[0].toUpperCase();
     const roleWords = approver.roleTitle.trim().split(/\s+/);
-    const roleAcronym = roleWords.length > 1 ? roleWords.map(w => w[0]?.toUpperCase()).join('') : approver.roleTitle.substring(0, 10).toUpperCase();
+    const roleAcronym = roleWords.length > 1 
+      ? roleWords.map(w => w[0]?.toUpperCase()).join('') 
+      : approver.roleTitle.substring(0, 10).toUpperCase();
+      
     const nameSize = 7; const roleSize = 6;
     const nameWidth = fontBold.widthOfTextAtSize(firstName, nameSize);
     const roleWidth = fontRegular.widthOfTextAtSize(roleAcronym, roleSize);
+    
     page.drawText(firstName, { x: x + (DESIGN_STAMP_W - nameWidth) / 2, y: y + 10, size: nameSize, font: fontBold, color: rgb(0, 0, 0) });
     page.drawText(roleAcronym, { x: x + (DESIGN_STAMP_W - roleWidth) / 2, y: y + 3, size: roleSize, font: fontRegular, color: rgb(0, 0, 0) });
     return { width: DESIGN_STAMP_W, height: DESIGN_STAMP_H };
@@ -41,10 +61,13 @@ function drawDigitalStamp(page: PDFPage, signatureImage: PDFImage, approver: App
     const maxSigW = STAMP_W - 10; const maxSigH = 30;
     let sigW = maxSigW; let sigH = sigW / aspect;
     if (sigH > maxSigH) { sigH = maxSigH; sigW = sigH * aspect; }
+    
     page.drawImage(signatureImage, { x: x + (STAMP_W - sigW) / 2, y: y + STAMP_H - sigH - 4, width: sigW, height: sigH });
     page.drawText(approver.userName, { x: x + 6, y: y + 24, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+    
     const shortRole = approver.roleTitle.length > 25 ? approver.roleTitle.substring(0, 23) + '...' : approver.roleTitle;
     page.drawText(shortRole, { x: x + 6, y: y + 14, size: 6, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+    
     const dateStr = new Date().toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     page.drawText(`Disetujui: ${dateStr}`, { x: x + 6, y: y + 5, size: 5, font: fontRegular, color: rgb(0.4, 0.4, 0.4) });
     page.drawText(requestId, { x: x + STAMP_W - 40, y: y + 5, size: 4, font: fontRegular, color: rgb(0.6, 0.6, 0.6) });
@@ -66,7 +89,6 @@ export async function executeOneClickAutoSign(
         pdfBytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) pdfBytes[i] = binaryString.charCodeAt(i);
       } else {
-        // PERBAIKAN: Suntikan Cache-Buster untuk memaksa unduh PDF terbaru dari Hostinger sebelum ditandatangani
         const cacheBusterUrl = pdfSource.includes('?') ? `${pdfSource}&t=${Date.now()}` : `${pdfSource}?t=${Date.now()}`;
         const response = await fetch(cacheBusterUrl);
         pdfBytes = new Uint8Array(await response.arrayBuffer());
@@ -98,14 +120,9 @@ export async function executeOneClickAutoSign(
     
     const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
     const pages = pdfDoc.getPages();
-    pages.forEach(page => {
-      try {
-        const contents = page.node.get(PDFName.of('Contents'));
-        if (contents && contents.constructor.name !== 'PDFArray') {
-          page.node.set(PDFName.of('Contents'), pdfDoc.context.obj([contents]));
-        }
-      } catch (e) {}
-    });
+    
+    // Blok page.node.set(PDFName.of('Contents')) telah dihapus di sini untuk mencegah bug halaman putih.
+
     const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     let lastPageIndex = pages.length - 1;
@@ -125,14 +142,14 @@ export async function executeOneClickAutoSign(
     if (category === 'WO Existing') {
       const STAMP_W = 130; const GAP = 10; const marginRight = 40;
       let pagesToSign: number[] = [];
-      if (docType === 'PR' || docType === 'PO') { pagesToSign = [pages.length]; } 
-      else { pagesToSign = selectedPages.length > 0 ? selectedPages : pages.map((_, i) => i + 1); }
+      if (docType === 'PR' || docType === 'PO') { pagesToSign = [pages.length]; }
+       else { pagesToSign = selectedPages.length > 0 ? selectedPages : pages.map((_, i) => i + 1); }
       let virtualTotalApprovers = 4;
       let virtualIndex = 0;
       const realIndex = allSteps.findIndex(s => s.id === currentApprover.id);
-      if (docType === 'WO') { virtualTotalApprovers = 4; virtualIndex = realIndex; } 
-      else if (docType === 'PR') { virtualTotalApprovers = 2; virtualIndex = realIndex - 5; } 
-      else if (docType === 'PO') { virtualTotalApprovers = 1; virtualIndex = 0; }
+      if (docType === 'WO') { virtualTotalApprovers = 4; virtualIndex = realIndex; }
+       else if (docType === 'PR') { virtualTotalApprovers = 2; virtualIndex = realIndex - 5; }
+       else if (docType === 'PO') { virtualTotalApprovers = 1; virtualIndex = 0; }
       const totalBlockWidth = (virtualTotalApprovers * STAMP_W) + ((virtualTotalApprovers - 1) * GAP);
       for (const pageNum of pagesToSign) {
         if (pageNum < 1 || pageNum > pages.length) continue;
@@ -148,8 +165,8 @@ export async function executeOneClickAutoSign(
           if (pageNum === pages.length) lastPageIndex = pdfDoc.getPages().length - 1;
         } else {
           if (docType === 'PR') {
-            if (virtualIndex === 0 && prPoAnchors.dimintaOleh) { x = prPoAnchors.dimintaOleh.x - 30; y = prPoAnchors.dimintaOleh.y - 75; } 
-            else if (virtualIndex === 1 && prPoAnchors.disetujuiOleh) { x = prPoAnchors.disetujuiOleh.x - 30; y = prPoAnchors.disetujuiOleh.y - 75; }
+            if (virtualIndex === 0 && prPoAnchors.dimintaOleh) { x = prPoAnchors.dimintaOleh.x - 30; y = prPoAnchors.dimintaOleh.y - 75; }
+             else if (virtualIndex === 1 && prPoAnchors.disetujuiOleh) { x = prPoAnchors.disetujuiOleh.x - 30; y = prPoAnchors.disetujuiOleh.y - 75; }
           } else if (docType === 'PO') {
             if (virtualIndex === 0 && prPoAnchors.bagianPembelian) { x = prPoAnchors.bagianPembelian.x - 30; y = prPoAnchors.bagianPembelian.y - 75; }
           }
@@ -197,15 +214,21 @@ export async function executeOneClickAutoSign(
         totalSigned++;
       }
     }
+    
     signedPagesList.sort((a, b) => a - b);
     const modifiedBytes = await pdfDoc.save();
     const blob = new Blob([modifiedBytes as unknown as BlobPart], { type: 'application/pdf' });
     const signedPdfUrl = URL.createObjectURL(blob);
+    
     return {
       success: true, signedPdfUrl, signedAt: new Date().toISOString(), detectedPage: signedPagesList[0] || (lastPageIndex + 1), signedPages: signedPagesList,
       totalSlotsSigned: totalSigned, coordinates: lastFittedCoords, detectionMethod: 'dynamic_margin_shift', auditStamp: 'Stamp Card Digital'
     };
   } catch (error: any) {
-    return { success: false, signedPdfUrl: '', signedAt: '', detectedPage: 1, signedPages: [], totalSlotsSigned: 0, coordinates: { x: 0, y: 0, width: 0, height: 0 }, detectionMethod: 'layout_slot_matched', auditStamp: '', error: error?.message || 'Gagal menandatangani.' };
+    return { 
+      success: false, signedPdfUrl: '', signedAt: '', detectedPage: 1, signedPages: [], 
+      totalSlotsSigned: 0, coordinates: { x: 0, y: 0, width: 0, height: 0 }, 
+      detectionMethod: 'layout_slot_matched', auditStamp: '', error: error?.message || 'Gagal menandatangani.' 
+    };
   }
 }
