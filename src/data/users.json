@@ -1,0 +1,62 @@
+[
+  {
+    "id": "user_ivan",
+    "name": "Ivan",
+    "role": "Managing Director",
+    "email": "ivan@company.com"
+  },
+  {
+    "id": "user_sigit",
+    "name": "Sigit",
+    "role": "Project Manager",
+    "email": "sigit@company.com"
+  },
+  {
+    "id": "user_ilham",
+    "name": "Ilham",
+    "role": "Interior Design",
+    "email": "ilham@company.com"
+  },
+  {
+    "id": "user_yuli",
+    "name": "Yuli",
+    "role": "Designer",
+    "email": "nada@company.com"
+  },
+  {
+    "id": "user_billie",
+    "name": "Billie",
+    "role": "Design Manager",
+    "email": "billie@company.com"
+  },
+  {
+    "id": "user_janet",
+    "name": "Janet",
+    "role": "Project Management Manager",
+    "email": "janet@company.com"
+  },
+  {
+    "id": "user_lily",
+    "name": "Lily",
+    "role": "Head of Design",
+    "email": "lily@company.com"
+  },
+  {
+    "id": "user_anton",
+    "name": "Anton",
+    "role": "CEO",
+    "email": "anton@company.com"
+  },
+  {
+    "id": "user_hadi",
+    "name": "Hadi",
+    "role": "SCM Manager",
+    "email": "hadi@company.com"
+  },
+  {
+    "id": "user_mega",
+    "name": "Mega",
+    "role": "Purchasing Supervisor",
+    "email": "mega@company.com"
+  }
+]

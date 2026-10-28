@@ -8,7 +8,7 @@ export interface UserProfile {
   id: string;
   name: string;
   role: string;
-  department: string;
+  department?: string; // Menambahkan tanda tanya agar bersifat opsional (tidak wajib ada)
   email: string;
   avatarUrl?: string;
   signatureBase64?: string; // Stored PNG signature
@@ -21,7 +21,7 @@ export interface DetectedSlot {
   pageNumber: number;
   slotType?: 'table_cell' | 'footer_cell' | 'authorization_box' | 'paraf_corner';
   isFooter?: boolean;
-  hasExplicitBox?: boolean; // True if a bordered cell/kotakan was found; false if freeform text
+  hasExplicitBox?: boolean;
   slotLabel?: string;
   x: number;
   y: number;
@@ -40,13 +40,13 @@ export interface ApproverStep {
   order: number;
   userId: string;
   userName: string;
-  roleTitle: string; // e.g. "Pengaju", "PM", "PMO", "MD"
+  roleTitle: string;
   status: StepStatus;
   signedAt?: string;
   comment?: string;
   signatureUrl?: string;
-  detectedSlot?: DetectedSlot; // Coordinates detected directly from the PDF layout
-  detectedSlots?: DetectedSlot[]; // Multi-page support: all detected signature boxes across pages
+  detectedSlot?: DetectedSlot;
+  detectedSlots?: DetectedSlot[];
 }
 
 export interface PageReviewItem {
@@ -92,14 +92,14 @@ export interface ApprovalRequest {
   updatedAt: string;
   status: 'draft' | 'in_progress' | 'needs_revision' | 'completed' | 'rejected';
   pdfFileName: string;
-  pdfDataUrl: string; // Base64 Data URL or Blob URL of current PDF state
+  pdfDataUrl: string;
   originalPdfDataUrl?: string;
   flow: ApproverStep[];
-  currentStepIndex: number; // Index in flow that is currently waiting
+  currentStepIndex: number;
   notes?: string;
   totalPages?: number;
   pageReviews?: PageReviewItem[];
-  auditNotes?: PageAuditNote[]; // Complete recorded history of page-by-page notes
+  auditNotes?: PageAuditNote[];
   revisionHistory?: RevisionHistoryItem[];
   lastRevisionRequestedBy?: string;
 }

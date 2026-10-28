@@ -1,19 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import {
-  Upload,
-  Plus,
-  Trash2,
-  FileText,
-  ArrowRight,
-  FileCheck2,
-  RefreshCw,
-  ExternalLink,
-  Maximize2
-} from 'lucide-react';
+import { Upload, Plus, Trash2, ArrowRight, RefreshCcw, FileText, AlertCircle, Check } from 'lucide-react';
 import { analyzePdfApproverLayout } from '../services/pdfTextExtractor';
-import { createSampleApprovalPdf } from '../services/samplePdfGenerator';
-import { DetectedSlot, ApprovalRequest } from '../types';
+import { DetectedSlot } from '../types';
 
 interface ApproverInput {
   id: string;
@@ -26,143 +15,76 @@ interface ApproverInput {
 }
 
 export const PengajuanView: React.FC = () => {
-  const { users, currentUser, createNewRequest, setActiveTab, showToast, setFullScreenPreviewRequest } = useApp();
-
+  const { users, currentUser, createNewRequest, setActiveTab, showToast } = useApp();
+  
+  const [requestCategory, setRequestCategory] = useState<'Design' | 'WO Existing' | ''>('');
   const [approvalName, setApprovalName] = useState('');
-  const [selectedFile, setSelectedFile] = useState<{
-    name: string;
-    dataUrl: string;
-    size: string;
-    buffer?: ArrayBuffer;
-  } | null>(null);
-
+  const [selectedFile, setSelectedFile] = useState<{ name: string; dataUrl: string; size: string; buffer?: ArrayBuffer } | null>(null);
   const [isScanningPdf, setIsScanningPdf] = useState(false);
-  const [detectedPageCount, setDetectedPageCount] = useState<number>(4);
+  const [detectedPageCount, setDetectedPageCount] = useState<number>(1);
+  const [selectedPages, setSelectedPages] = useState<number[]>([]);
+  const [forceNewPage, setForceNewPage] = useState(false); // State baru untuk checkbox Halaman Baru
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Initial Approver Flow sequence: User B (Approver 1) -> User C (Approver 2)
-  const [approverFlow, setApproverFlow] = useState<ApproverInput[]>(() => {
-    const userB = users.find(u => u.name === 'Sigit' && u.id !== currentUser.id) ||
-      users.find(u => u.name === 'Nada' && u.id !== currentUser.id) ||
-      users[0];
-    const userC = users.find(u => u.name === 'Ivan' && u.id !== currentUser.id && u.id !== userB.id) ||
-      users.find(u => u.role === 'Managing Director') ||
-      users[1] || users[0];
-
-    return [
-      {
-        id: 'step_1',
-        name: userB.name,
-        role: userB.role,
-        userId: userB.id,
-        isMatchedFromPdf: false,
-      },
-      {
-        id: 'step_2',
-        name: userC.name,
-        role: userC.role,
-        userId: userC.id,
-        isMatchedFromPdf: false,
-      },
-    ];
-  });
-
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pdfDetectedSlots, setPdfDetectedSlots] = useState<any[]>([]);
 
-  // Scan PDF buffer and adjust approver flow directly from the PDF
+  const [approverFlow, setApproverFlow] = useState<ApproverInput[]>([]);
+  const [selectedUserManagerId, setSelectedUserManagerId] = useState<string>('');
+
   const processAndScanPdfBuffer = async (buffer: ArrayBuffer, fileName: string, dataUrl: string) => {
     setIsScanningPdf(true);
-
     try {
       const analysis = await analyzePdfApproverLayout(buffer, users);
       if (analysis.pageCount) {
         setDetectedPageCount(analysis.pageCount);
+        setSelectedPages(Array.from({ length: analysis.pageCount }, (_, i) => i + 1));
       }
-
-      if (analysis.documentTitle && !approvalName) {
-        setApprovalName(analysis.documentTitle);
-      }
-
+      
       if (analysis.multiPageFlow && analysis.multiPageFlow.length > 0) {
-        const newFlow: ApproverInput[] = analysis.multiPageFlow.map((match, index) => {
-          return {
-            id: `scan_${index}_${Date.now()}`,
-            name: match.userName,
-            role: match.roleTitle,
-            userId: match.userId,
-            isMatchedFromPdf: true,
-            detectedSlot: match.detectedSlot,
-            detectedSlots: match.detectedSlots,
-          };
-        });
-
-        setApproverFlow(newFlow);
-        showToast('Berkas dokumen berhasil dimuat.', 'success');
+        setPdfDetectedSlots(analysis.multiPageFlow);
       } else {
-        showToast('Berkas dokumen berhasil dimuat.', 'info');
+        setPdfDetectedSlots([]);
       }
+      showToast('File dokumen berhasil dilampirkan.', 'info');
     } catch (err) {
-      console.warn('PDF scan note:', err);
+      console.warn('PDF scan issue:', err);
     } finally {
       setIsScanningPdf(false);
     }
   };
 
-  // Process a single file object strictly
   const processSingleFile = (file: File) => {
     if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      showToast('Format berkas harus PDF (.pdf)', 'error');
-      return;
+      return showToast('Gunakan file berformat PDF.', 'error');
     }
 
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const buffer = reader.result as ArrayBuffer;
-      const dataUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/pdf' }));
+    setApprovalName(prev => prev.trim() ? prev : file.name.replace(/\.pdf$/i, '').replace(/[-_]/g, ' '));
 
-      // Strictly 1 file per approval: replaces previous file
-      setSelectedFile({
-        name: file.name,
-        dataUrl,
-        size: `${(file.size / 1024).toFixed(1)} KB`,
-        buffer,
-      });
-
-      if (!approvalName.trim()) {
-        const guessedTitle = file.name.replace(/\.pdf$/i, '').replace(/_/g, ' ');
-        setApprovalName(guessedTitle);
-      }
-
-      await processAndScanPdfBuffer(buffer, file.name, dataUrl);
+    const dataUrlReader = new FileReader();
+    dataUrlReader.onload = () => {
+      const base64DataUrl = dataUrlReader.result as string;
+      const bufferReader = new FileReader();
+      bufferReader.onload = async () => {
+        const buffer = bufferReader.result as ArrayBuffer;
+        setSelectedFile({ name: file.name, dataUrl: base64DataUrl, size: `${(file.size / 1024).toFixed(1)} KB`, buffer });
+        await processAndScanPdfBuffer(buffer, file.name, base64DataUrl);
+      };
+      bufferReader.readAsArrayBuffer(file);
     };
-    reader.readAsArrayBuffer(file);
+    dataUrlReader.readAsDataURL(file);
   };
 
-  // Handle local PDF file upload (strictly single file)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    if (files.length > 1) {
-      showToast('Hanya dapat mengunggah 1 berkas per pengajuan. Berkas pertama yang dipilih.', 'info');
-    }
-
-    processSingleFile(files[0]);
-    // Reset input so user can pick again if needed
+    if (e.target.files?.[0]) processSingleFile(e.target.files[0]);
     e.target.value = '';
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    const files = e.dataTransfer.files;
-    if (!files || files.length === 0) return;
-
-    if (files.length > 1) {
-      showToast('Hanya dapat mengunggah 1 berkas per pengajuan. Berkas pertama yang diproses.', 'info');
-    }
-
-    processSingleFile(files[0]);
+    if (e.dataTransfer.files?.[0]) processSingleFile(e.dataTransfer.files[0]);
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -170,433 +92,318 @@ export const PengajuanView: React.FC = () => {
     e.stopPropagation();
   };
 
-  const handleRemoveFile = () => {
-    setSelectedFile(null);
-  };
-
-  // Fast Test File Loader (Production testing verification for the 2 official enterprise files)
-  const handleLoadTestFile = async (testKey: 'wi_produksi' | 'kintoun_suhat') => {
-    setIsScanningPdf(true);
-
-    let slots: { name: string; role: string; order: number }[] = [];
-    let titlePreset = '';
-    let fileName = '';
-
-    if (testKey === 'wi_produksi') {
-      titlePreset = 'WI Produksi Base dan Premix';
-      fileName = 'WI_PRODUKSI_BASE_DAN_PREMIX.pdf';
-      slots = [
-        { name: 'Nada', role: 'Supervisor Audit', order: 0 },
-        { name: 'Sigit', role: 'Project Manager', order: 1 },
-        { name: 'Fitrah', role: 'RND Manager', order: 2 },
-        { name: 'Ivan', role: 'Managing Director', order: 3 },
-      ];
-    } else {
-      titlePreset = 'Persetujuan Desain & Pembukaan Cabang Kintoun Suhat Malang';
-      fileName = 'Approval_Desain_Kintoun_Suhat_Malang.pdf';
-      slots = [
-        { name: 'Billie', role: 'Design Lead', order: 0 },
-        { name: 'Lily', role: 'Head of Design', order: 1 },
-        { name: 'Sigit', role: 'Operations Manager', order: 2 },
-        { name: 'Janet', role: 'Project Manager Officer', order: 3 },
-        { name: 'Anton', role: 'CEO', order: 4 },
-      ];
-    }
-
-    try {
-      setApprovalName(titlePreset);
-      const generatedUrl = await createSampleApprovalPdf(titlePreset, slots);
-
-      const resp = await fetch(generatedUrl);
-      const buffer = await resp.arrayBuffer();
-
-      setSelectedFile({
-        name: fileName,
-        dataUrl: generatedUrl,
-        size: `${(buffer.byteLength / 1024).toFixed(1)} KB`,
-        buffer,
-      });
-
-      await processAndScanPdfBuffer(buffer, fileName, generatedUrl);
-    } catch (err) {
-      showToast('Gagal memproses berkas uji coba.', 'error');
-    } finally {
-      setIsScanningPdf(false);
-    }
-  };
-
-  const handleAddApprover = () => {
-    const newIdx = approverFlow.length;
-    const availableUser = users[newIdx % users.length] || users[0];
-    setApproverFlow(prev => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        name: availableUser.name,
-        role: availableUser.role,
-        userId: availableUser.id,
-        isMatchedFromPdf: false,
-      },
-    ]);
-  };
-
-  const handleRemoveApprover = (id: string) => {
-    if (approverFlow.length <= 1) {
-      showToast('Alur minimal membutuhkan 1 approver', 'error');
-      return;
-    }
-    setApproverFlow(prev => prev.filter(item => item.id !== id));
-  };
-
   const handleUpdateApproverUser = (id: string, userId: string) => {
     const u = users.find(x => x.id === userId);
     if (!u) return;
-    setApproverFlow(prev =>
-      prev.map(item =>
-        item.id === id
-          ? {
-              ...item,
-              userId: u.id,
-              name: u.name,
-              role: u.role,
-            }
-          : item
-      )
-    );
+    setApproverFlow(prev => prev.map(item => item.id === id ? { ...item, userId: u.id, name: u.name, role: u.role } : item));
   };
 
-  const handleUpdateRole = (id: string, newRole: string) => {
-    setApproverFlow(prev =>
-      prev.map(item => (item.id === id ? { ...item, role: newRole } : item))
-    );
+  const togglePageSelection = (pageNum: number) => {
+    setSelectedPages(prev => prev.includes(pageNum) ? prev.filter(p => p !== pageNum) : [...prev, pageNum]);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleInitialSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!approvalName.trim()) {
-      showToast('Nama pengajuan wajib diisi', 'error');
-      return;
+    if (!requestCategory) return showToast('Harap pilih Kategori Dokumen terlebih dahulu.', 'error');
+    if (!approvalName.trim()) return showToast('Judul dokumen wajib diisi.', 'error');
+    if (!selectedFile || !selectedFile.dataUrl) return showToast('Harap unggah file dokumen PDF terlebih dahulu.', 'error');
+    if (selectedPages.length === 0) return showToast('Harap pilih minimal satu halaman untuk dibubuhkan tanda tangan.', 'error');
+    
+    if (requestCategory === 'Design' && approverFlow.length === 0) {
+      return showToast('Alur persetujuan kosong. Harap tentukan minimal satu approver.', 'error');
     }
-
-    if (approverFlow.length === 0) {
-      showToast('Tentukan minimal satu approver', 'error');
-      return;
+    if (requestCategory === 'WO Existing' && !selectedUserManagerId) {
+      return showToast('Harap pilih User Manager untuk alur WO Existing.', 'error');
     }
+    setShowConfirmModal(true);
+  };
 
+  const executeFinalSubmit = async () => {
+    setShowConfirmModal(false);
     setIsSubmitting(true);
-
     try {
-      let finalPdfUrl = selectedFile?.dataUrl;
-      let finalFileName = selectedFile?.name || 'Dokumen_Pengesahan.pdf';
-
-      if (!finalPdfUrl) {
-        const slots = approverFlow.map((a, i) => ({
-          name: a.name,
-          role: a.role,
-          order: i,
-        }));
-        finalPdfUrl = await createSampleApprovalPdf(approvalName, slots);
+      let finalApprovers = approverFlow;
+      if (requestCategory === 'WO Existing') {
+        const userManager = users.find(u => u.id === selectedUserManagerId)!;
+        const hadi = users.find(u => u.name.includes('Hadi')) || users[0];
+        const ivan = users.find(u => u.name.includes('Ivan')) || users[0];
+        const mega = users.find(u => u.name.includes('Mega')) || users[0];
+        finalApprovers = [
+          { id: 'wo_1', userId: currentUser.id, name: currentUser.name, role: currentUser.role, isMatchedFromPdf: false },
+          { id: 'wo_2', userId: userManager.id, name: userManager.name, role: userManager.role, isMatchedFromPdf: false },
+          { id: 'wo_3', userId: hadi.id, name: hadi.name, role: 'SCM Manager', isMatchedFromPdf: false },
+          { id: 'wo_4', userId: ivan.id, name: ivan.name, role: 'Managing Director', isMatchedFromPdf: false },
+          { id: 'wo_5', userId: mega.id, name: mega.name, role: 'Purchasing Supervisor', isMatchedFromPdf: false },
+          { id: 'wo_6', userId: currentUser.id, name: currentUser.name, role: currentUser.role + ' (PR TTD)', isMatchedFromPdf: false },
+          { id: 'wo_7', userId: mega.id, name: mega.name, role: 'Purchasing (PR TTD)', isMatchedFromPdf: false },
+          { id: 'wo_8', userId: mega.id, name: mega.name, role: 'Purchasing (PO)', isMatchedFromPdf: false }
+        ];
       }
 
-      const formattedApprovers = approverFlow.map(a => ({
-        userId: a.userId,
-        userName: a.name,
-        roleTitle: a.role,
-        detectedSlot: a.detectedSlot,
-        detectedSlots: a.detectedSlots,
-      }));
+      const formattedApprovers = finalApprovers.map(a => {
+        const matchedSlot = pdfDetectedSlots.find(
+          (slot: any) => slot.userId === a.userId ||
+                   slot.userName.toLowerCase() === a.name.toLowerCase() ||
+                   slot.roleTitle.toLowerCase() === a.role.toLowerCase()
+        );
+        return {
+          userId: a.userId,
+          userName: a.name,
+          roleTitle: a.role,
+          detectedSlot: matchedSlot?.detectedSlot,
+          detectedSlots: matchedSlot?.detectedSlots,
+        };
+      });
 
       await createNewRequest(
         approvalName.trim(),
-        finalFileName,
-        finalPdfUrl,
+        selectedFile.name,
+        selectedFile.dataUrl,
         formattedApprovers,
-        detectedPageCount
+        detectedPageCount,
+        requestCategory as 'Design' | 'WO Existing',
+        selectedPages,
+        forceNewPage // Mengirimkan status halaman baru
       );
-
       setActiveTab('tracking');
     } catch (err: any) {
-      showToast(err?.message || 'Gagal mengirim pengajuan', 'error');
+      showToast(err?.message || 'Pengajuan gagal dikirim.', 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="max-w-3xl mx-auto py-8 px-4 sm:px-6">
-      {/* Title */}
-      <div className="mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900">
-          Ajukan Dokumen Baru
-        </h1>
-        <p className="mt-1 text-xs sm:text-sm text-neutral-500">
-          Unggah 1 berkas PDF resmi dan tentukan urutan persetujuan pejabat yang berwenang.
-        </p>
+    <div className="max-w-2xl mx-auto py-12 px-4 sm:px-6">
+      <div className="mb-10">
+        <h1 className="text-2xl font-bold text-neutral-900 tracking-tight mb-2">Buat Pengajuan</h1>
+        <p className="text-sm text-neutral-500">Unggah dokumen dan lengkapi detail persetujuan di bawah ini.</p>
       </div>
-
-      <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Dokumen */}
-        <div className="bg-white rounded-2xl border border-neutral-200/90 p-5 sm:p-6 shadow-xs">
-          <div className="pb-3 mb-4 border-b border-neutral-100">
-            <h2 className="text-sm sm:text-base font-bold text-neutral-900">
-              1. Berkas & Judul Surat
-            </h2>
+      
+      <form onSubmit={handleInitialSubmit} className="space-y-10">
+        
+        {/* BAGIAN 1: FILE UPLOAD */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-neutral-900">1. Dokumen Utama</h2>
           </div>
-
-          <div className="space-y-4">
-            {/* Input: Nama Pengajuan */}
-            <div>
-              <label htmlFor="approvalName" className="block text-xs font-semibold text-neutral-700 mb-1.5">
-                Nama / Judul Dokumen <span className="text-rose-500">*</span>
-              </label>
-              <input
-                id="approvalName"
-                type="text"
-                required
-                value={approvalName}
-                onChange={e => setApprovalName(e.target.value)}
-                placeholder="Contoh: Surat Permohonan Pengadaan Barang"
-                className="w-full px-3.5 py-2.5 text-sm bg-neutral-50/70 border border-neutral-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:bg-white text-neutral-900 placeholder:text-neutral-400 font-medium transition-all"
-              />
+          <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" />
+          
+          {selectedFile ? (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-neutral-200 bg-white rounded-xl gap-4 shadow-sm transition-all">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-lg bg-neutral-50 border border-neutral-100 flex items-center justify-center shrink-0">
+                  <FileText className="w-5 h-5 text-neutral-600" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-neutral-900 truncate">{selectedFile.name}</p>
+                  <p className="text-xs text-neutral-500">{selectedFile.size} · {detectedPageCount} Halaman</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="px-3 py-1.5 text-xs font-medium text-neutral-600 hover:text-neutral-900 bg-neutral-50 hover:bg-neutral-100 rounded-md transition-colors">
+                  Ganti File
+                </button>
+                <button type="button" onClick={() => { setSelectedFile(null); setApproverFlow([]); setSelectedPages([]); setApprovalName(''); setForceNewPage(false); }} className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
+          ) : (
+            <div
+               onDrop={handleDrop} onDragOver={handleDragOver} onClick={() => fileInputRef.current?.click()}
+               className="border border-dashed border-neutral-300 rounded-xl p-12 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-neutral-50 hover:border-neutral-400 transition-colors"
+            >
+              <Upload className="w-6 h-6 text-neutral-400 mb-3" />
+              <span className="text-sm font-semibold text-neutral-900">Pilih file PDF dokumen utama</span>
+              <span className="text-xs text-neutral-500 mt-1">atau seret file ke area ini</span>
+            </div>
+          )}
+        </section>
 
-            {/* Document Selection: Strictly 1 File per Approval */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-neutral-700">
-                  Berkas Dokumen PDF <span className="text-rose-500">*</span>
-                </label>
-                <span className="text-[11px] text-neutral-400">
-                  Maksimal 1 berkas PDF
-                </span>
+        {/* BAGIAN 2: DETAIL PENGAJUAN */}
+        {selectedFile && (
+          <section className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <h2 className="text-sm font-bold text-neutral-900 mb-5">2. Detail Pengajuan</h2>
+            
+            <div className="space-y-6 bg-white p-6 rounded-xl border border-neutral-100 shadow-sm">
+              <div>
+                <label className="block text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Kategori Dokumen</label>
+                <select
+                  value={requestCategory}
+                  onChange={e => { setRequestCategory(e.target.value as 'Design' | 'WO Existing'); setForceNewPage(false); }}
+                  className="w-full px-4 py-2.5 text-sm bg-transparent border border-neutral-200 rounded-lg focus:outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900 cursor-pointer transition-colors"
+                >
+                  <option value="" disabled>Pilih Kategori Dokumen</option>
+                  <option value="Design">Design Drawing</option>
+                  <option value="WO Existing">WO Existing</option>
+                </select>
               </div>
 
-              {/* Hidden file input strictly multiple=false */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,application/pdf"
-                multiple={false}
-                onChange={handleFileUpload}
-                className="hidden"
-              />
+              <div>
+                <label className="block text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Judul Dokumen</label>
+                <input
+                  type="text" required value={approvalName} onChange={e => setApprovalName(e.target.value)}
+                  placeholder="Ketik judul dokumen..."
+                  className="w-full px-4 py-2.5 text-sm bg-transparent border border-neutral-200 rounded-lg focus:outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900 transition-colors"
+                />
+              </div>
 
-              {/* If file is already selected: show single attached file card */}
-              {selectedFile ? (
-                <div className="border border-neutral-200 bg-neutral-50/60 rounded-xl p-4 transition-all">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-xl bg-neutral-900 text-white flex items-center justify-center shrink-0">
-                        <FileCheck2 className="w-5 h-5 text-white" />
+              <div>
+                <label className="block text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Pilih Halaman Untuk Distempel</label>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {Array.from({ length: detectedPageCount }, (_, i) => i + 1).map(pageNum => (
+                    <label key={pageNum} className={`flex items-center gap-2 px-3 py-1.5 border rounded-md cursor-pointer transition-colors ${selectedPages.includes(pageNum) ? 'bg-neutral-900 text-white border-neutral-900' : 'bg-transparent text-neutral-600 border-neutral-200 hover:border-neutral-300'}`}>
+                      <input type="checkbox" className="hidden" checked={selectedPages.includes(pageNum)} onChange={() => togglePageSelection(pageNum)} />
+                      <span className="text-xs font-medium">Halaman {pageNum}</span>
+                    </label>
+                  ))}
+                </div>
+
+                {requestCategory === 'WO Existing' && (
+                  <div className="pt-4 border-t border-neutral-100">
+                    <label className="flex flex-row items-start gap-3 cursor-pointer p-3 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
+                      <div className="flex items-center h-5 mt-0.5">
+                        <input type="checkbox" checked={forceNewPage} onChange={e => setForceNewPage(e.target.checked)} className="w-4 h-4 accent-neutral-900 border-neutral-300 rounded cursor-pointer" />
                       </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-neutral-900 truncate">
-                            {selectedFile.name}
-                          </span>
-                        </div>
-                        <p className="text-xs text-neutral-500 mt-0.5">
-                          {selectedFile.size} · {detectedPageCount} Halaman PDF
-                        </p>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-semibold text-neutral-900">Paksa Halaman Baru (Khusus WO)</span>
+                        <span className="text-[10px] text-neutral-500 mt-0.5">Centang ini jika baris terakhir PDF sudah penuh. Stempel akan otomatis dicetak di Kanan Atas pada halaman PDF yang baru.</span>
                       </div>
-                    </div>
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const previewReq: ApprovalRequest = {
-                            id: 'DRAFT-PREVIEW',
-                            title: approvalName || selectedFile.name,
-                            category: 'Pra-Pengajuan',
-                            requesterId: currentUser.id,
-                            requesterName: currentUser.name,
-                            requesterRole: currentUser.role,
-                            createdAt: new Date().toISOString(),
-                            updatedAt: new Date().toISOString(),
-                            status: 'draft',
-                            pdfFileName: selectedFile.name,
-                            pdfDataUrl: selectedFile.dataUrl,
-                            flow: approverFlow.map((a, i) => ({
-                              id: a.id,
-                              order: i,
-                              userId: a.userId,
-                              userName: a.name,
-                              roleTitle: a.role,
-                              status: 'pending',
-                              detectedSlot: a.detectedSlot,
-                              detectedSlots: a.detectedSlots,
-                            })),
-                            currentStepIndex: 0,
-                            totalPages: detectedPageCount,
-                            pageReviews: Array.from({ length: detectedPageCount }, (_, i) => ({
-                              pageNumber: i + 1,
-                              title: `Halaman ${i + 1}`,
-                              status: 'approved',
-                            })),
-                          };
-                          setFullScreenPreviewRequest(previewReq);
-                        }}
-                        className="px-3 py-1.5 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
-                        title="Buka Dokumen Layar Penuh"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5" />
-                        <span>Buka Surat</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="px-3 py-1.5 text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors flex items-center gap-1.5 cursor-pointer"
-                        title="Ganti Berkas Dokumen"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5 text-neutral-500" />
-                        <span>Ganti</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleRemoveFile}
-                        className="p-1.5 text-neutral-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Hapus Berkas"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+        {/* BAGIAN 3: ALUR PERSETUJUAN */}
+        {selectedFile && (
+          <section className="animate-in fade-in slide-in-from-bottom-4 duration-300 delay-100">
+            <h2 className="text-sm font-bold text-neutral-900 mb-5">3. Alur Otorisasi</h2>
+            
+            <div className="bg-white p-6 rounded-xl border border-neutral-100 shadow-sm">
+              {requestCategory === '' ? (
+                <div className="py-6 text-center">
+                  <p className="text-sm text-neutral-500">Pilih Kategori Dokumen di atas untuk memuat alur.</p>
+                </div>
+              ) : requestCategory === 'WO Existing' ? (
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">User Manager (Atasan Pengaju)</label>
+                    <select value={selectedUserManagerId} onChange={e => setSelectedUserManagerId(e.target.value)} className="w-full px-4 py-2.5 text-sm bg-transparent border border-neutral-200 rounded-lg focus:outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900 cursor-pointer transition-colors">
+                      <option value="">-- Tentukan Manager --</option>
+                      {users.filter(u => u.id !== currentUser.id).map(u => (
+                        <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mb-3">Jalur Paten Sistem</label>
+                    <div className="relative pl-4 space-y-4 before:absolute before:left-[7px] before:top-2 before:bottom-2 before:w-px before:bg-neutral-200">
+                      <div className="relative flex items-center gap-4">
+                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
+                        <div className="text-sm font-semibold text-neutral-900">{currentUser.name} <span className="text-xs font-normal text-neutral-500 ml-1">sebagai Pengaju</span></div>
+                      </div>
+                      <div className="relative flex items-center gap-4">
+                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
+                        <div className="text-sm font-semibold text-neutral-900">{selectedUserManagerId ? users.find(u => u.id === selectedUserManagerId)?.name : '...'} <span className="text-xs font-normal text-neutral-500 ml-1">sebagai Manager</span></div>
+                      </div>
+                      <div className="relative flex items-center gap-4">
+                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
+                        <div className="text-sm font-semibold text-neutral-900">Hadi <span className="text-xs font-normal text-neutral-500 ml-1">sebagai SCM Manager</span></div>
+                      </div>
+                      <div className="relative flex items-center gap-4">
+                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
+                        <div className="text-sm font-semibold text-neutral-900">Ivan <span className="text-xs font-normal text-neutral-500 ml-1">sebagai Managing Director</span></div>
+                      </div>
+                      <div className="relative flex items-center gap-4">
+                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
+                        <div className="text-sm font-semibold text-neutral-900">Mega <span className="text-xs font-normal text-neutral-500 ml-1">sebagai Purch. Supervisor</span></div>
+                      </div>
+                      <div className="relative flex items-center gap-4">
+                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
+                        <div className="text-sm font-semibold text-neutral-900">{currentUser.name} <span className="text-xs font-normal text-neutral-500 ml-1">sebagai PR Signer</span></div>
+                      </div>
+                      <div className="relative flex items-center gap-4">
+                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
+                        <div className="text-sm font-semibold text-neutral-900">Mega <span className="text-xs font-normal text-neutral-500 ml-1">sebagai PO/PR Signer</span></div>
+                      </div>
                     </div>
                   </div>
                 </div>
               ) : (
-                /* Empty state: Clean dropzone */
-                <div
-                  onDrop={handleDrop}
-                  onDragOver={handleDragOver}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border border-dashed border-neutral-300 hover:border-neutral-400 rounded-xl p-8 bg-neutral-50/50 hover:bg-white transition-all flex flex-col items-center justify-center text-center cursor-pointer"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center text-neutral-600 mb-2.5">
-                    <Upload className="w-5 h-5" />
-                  </div>
-                  <div className="text-sm font-semibold text-neutral-900">
-                    Klik untuk memilih berkas PDF
-                  </div>
-                  <p className="text-xs text-neutral-500 mt-0.5 mb-3">
-                    atau seret berkas langsung ke area ini
-                  </p>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      fileInputRef.current?.click();
-                    }}
-                    className="px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white font-medium text-xs rounded-lg transition-colors cursor-pointer"
-                  >
-                    Pilih File PDF
+                <div className="space-y-4">
+                  {approverFlow.length === 0 ? (
+                    <div className="py-4 text-sm text-neutral-500">Belum ada penanda tangan yang ditambahkan.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {approverFlow.map((step, idx) => (
+                        <div key={step.id} className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2">
+                          <span className="text-xs font-bold text-neutral-400 w-4">{idx + 1}.</span>
+                          <select
+                            value={step.userId} onChange={e => handleUpdateApproverUser(step.id, e.target.value)}
+                            className="flex-1 px-3 py-2 text-sm bg-transparent border border-neutral-200 rounded-lg focus:outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900 cursor-pointer transition-colors"
+                          >
+                            {users.map(u => (
+                              <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
+                            ))}
+                          </select>
+                          <button type="button" onClick={() => setApproverFlow(prev => prev.filter(item => item.id !== step.id))} className="p-2 text-neutral-400 hover:text-rose-600 transition-colors">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button type="button" onClick={() => {
+                    const availableUsers = users.filter(u => u.id !== currentUser.id && !approverFlow.some(a => a.userId === u.id));
+                    const u = availableUsers.length > 0 ? availableUsers[0] : users[0];
+                    setApproverFlow(prev => [...prev, { id: Date.now().toString(), name: u.name, role: u.role, userId: u.id }]);
+                  }} className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900 transition-colors py-2 rounded-md">
+                    <Plus className="w-3.5 h-3.5" /> Tambah Approver
                   </button>
                 </div>
               )}
             </div>
-          </div>
-        </div>
+          </section>
+        )}
 
-        {/* Urutan Pejabat Penandatangan */}
-        <div className="bg-white rounded-2xl border border-neutral-200/90 p-5 sm:p-6 shadow-xs">
-          <div className="pb-3 mb-4 border-b border-neutral-100 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm sm:text-base font-bold text-neutral-900">
-                2. Urutan Pejabat Penandatangan
-              </h2>
-              <p className="text-xs text-neutral-500 mt-0.5">
-                Surat akan diserahkan secara sekuensial dari tahap awal hingga akhir.
-              </p>
-            </div>
-            <span className="text-xs font-medium bg-neutral-100 px-2.5 py-0.5 rounded-full text-neutral-700">
-              {approverFlow.length} Pejabat
-            </span>
-          </div>
-
-          {/* Dynamic Approver Rows */}
-          <div className="space-y-2.5">
-            {approverFlow.map((step, index) => (
-              <div
-                key={step.id}
-                className="flex flex-col sm:flex-row sm:items-center gap-2.5 p-3 border border-neutral-200/80 rounded-xl bg-neutral-50/40 hover:bg-white hover:border-neutral-300 transition-colors"
-              >
-                <div className="flex items-center gap-2 sm:w-24 shrink-0">
-                  <span className="w-6 h-6 rounded-full bg-neutral-900 text-white text-xs flex items-center justify-center font-bold">
-                    {index + 1}
-                  </span>
-                  <span className="text-xs font-semibold text-neutral-800">
-                    Tahap {index + 1}
-                  </span>
-                </div>
-
-                {/* Combined Approver & Jabatan Selector */}
-                <div className="flex-1">
-                  <select
-                    value={step.userId}
-                    onChange={e => handleUpdateApproverUser(step.id, e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-xs sm:text-sm font-semibold bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-neutral-900 text-neutral-900 cursor-pointer shadow-2xs"
-                  >
-                    {users.map(u => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} — {u.role}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Delete button */}
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveApprover(step.id)}
-                    className="p-1.5 text-neutral-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
-                    title="Hapus Pejabat Ini"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Add Step Button */}
-          <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={handleAddApprover}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Tambah Pejabat</span>
+        {selectedFile && (
+          <div className="pt-6 border-t border-neutral-100 flex items-center justify-between">
+            <p className="text-xs text-neutral-500">Form akan diajukan oleh <strong className="text-neutral-900">{currentUser.name}</strong></p>
+            <button type="submit" disabled={isSubmitting || requestCategory === ''} className="px-8 py-3 text-sm font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 transition-all shadow-md hover:shadow-lg">
+              {isSubmitting ? 'Memproses...' : 'Kirim Pengajuan'} <ArrowRight className="w-4 h-4" />
             </button>
           </div>
-        </div>
-
-        {/* Submit Bottom Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-neutral-200">
-          <div className="text-xs text-neutral-500">
-            Pengaju aktif: <span className="font-semibold text-neutral-800">{currentUser.name}</span> ({currentUser.role})
-          </div>
-
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full sm:w-auto px-6 py-2.5 text-xs sm:text-sm font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-          >
-            {isSubmitting ? (
-              <span>Mengirim Surat...</span>
-            ) : (
-              <>
-                <span>Kirim Pengajuan Surat</span>
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
-        </div>
+        )}
       </form>
+
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-5 h-5 text-neutral-700" />
+              </div>
+              <h3 className="text-base font-bold text-neutral-900">Kirim Dokumen?</h3>
+            </div>
+            <p className="text-sm text-neutral-600 leading-relaxed mb-6">
+              Dokumen <strong>{approvalName || 'tanpa judul'}</strong> akan disirkulasikan ke <strong>{requestCategory === 'WO Existing' ? 8 : approverFlow.length} approver</strong>. Pastikan pengaturan halaman tanda tangan sudah sesuai.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button type="button" onClick={executeFinalSubmit} className="w-full py-3 text-sm font-semibold text-white bg-neutral-900 rounded-xl hover:bg-neutral-800 transition-colors text-center shadow-sm">
+                Ya, Kirim Sekarang
+              </button>
+              <button type="button" onClick={() => setShowConfirmModal(false)} className="w-full py-3 text-sm font-semibold text-neutral-700 bg-transparent rounded-xl hover:bg-neutral-50 transition-colors text-center">
+                Periksa Kembali
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

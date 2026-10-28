@@ -7,7 +7,6 @@ import { ApprovalView } from './components/ApprovalView';
 import { TTDView } from './components/TTDView';
 import { ProfileView } from './components/ProfileView';
 import { LoginView } from './components/LoginView';
-import { TechnicalDocsModal } from './components/TechnicalDocsModal';
 import { FullScreenPdfViewer } from './components/FullScreenPdfViewer';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
@@ -63,9 +62,6 @@ const MainContent: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Technical Architecture & Hostinger Guide Modal */}
-      <TechnicalDocsModal />
 
       {/* Clean Subtle Footer */}
       <footer className="border-t border-neutral-200 bg-white py-6">
