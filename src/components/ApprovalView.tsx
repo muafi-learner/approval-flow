@@ -1,38 +1,26 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { ApprovalRequest } from '../types';
-import {
-  CheckCircle,
-  FileText,
-  ArrowRight,
-  AlertCircle,
-  RotateCcw,
-  Check,
-  X,
-  Upload,
+import { SignatureModal } from './SignatureModal';
+import { 
+  CheckCircle, FileText, ArrowRight, AlertCircle, 
+  RotateCcw, Check, X, Upload 
 } from 'lucide-react';
 
 export const ApprovalView: React.FC = () => {
   const {
-    requests,
-    currentUser,
-    performAutoSignApproval,
-    uploadPRAndForward,
-    uploadPOAndComplete,
-    rejectPRToMega,
-    rejectRequest,
-    setActiveTab,
-    showToast,
-    setFullScreenPreviewRequest,
+    requests, currentUser, performAutoSignApproval, uploadPRAndForward,
+    uploadPOAndComplete, rejectPRToMega, rejectRequest, setActiveTab, showToast, setFullScreenPreviewRequest,
   } = useApp();
 
   const [signingId, setSigningId] = useState<string | null>(null);
   const [rejectingReq, setRejectingReq] = useState<ApprovalRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
-  
-  // PERBAIKAN: Menggunakan Record (Kamus) untuk memisahkan state file per ID pengajuan
   const [uploads, setUploads] = useState<Record<string, { name: string, url: string }>>({});
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
+  
+  // PERBAIKAN: State untuk mengontrol pop-up modal tanda tangan
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
 
   const incomingRequests = requests.filter(r => {
     if (r.status !== 'in_progress') return false;
@@ -48,8 +36,9 @@ export const ApprovalView: React.FC = () => {
 
   const handleOneClickSign = async (req: ApprovalRequest) => {
     if (!currentUser.signatureBase64) {
-      showToast('Tanda tangan digital belum diatur. Silakan atur di menu TTD.', 'error');
-      setActiveTab('ttd');
+      showToast('Tanda tangan digital belum diatur.', 'error');
+      // PERBAIKAN: Munculkan pop-up alih-alih pindah halaman
+      setShowSignatureModal(true);
       return;
     }
     setSigningId(req.id);
@@ -132,7 +121,8 @@ export const ApprovalView: React.FC = () => {
               <span className="font-semibold">Tanda tangan digital belum diatur.</span> Anda perlu membuat tanda tangan sebelum menyetujui dokumen.
             </div>
           </div>
-          <button onClick={() => setActiveTab('ttd')} className="px-4 py-2 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shrink-0 shadow-sm">
+          {/* PERBAIKAN: Ubah aksi tombol dari ganti tab menjadi buka modal */}
+          <button onClick={() => setShowSignatureModal(true)} className="px-4 py-2 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shrink-0 shadow-sm">
             Atur Tanda Tangan
           </button>
         </div>
@@ -176,15 +166,11 @@ export const ApprovalView: React.FC = () => {
             const stepIndex = req.currentStepIndex;
             const currentStep = req.flow[stepIndex];
             const isSigning = signingId === req.id;
-            
             const isStep5PRUpload = req.category === 'WO Existing' && stepIndex === 4;
             const isStep8POUpload = req.category === 'WO Existing' && stepIndex === 7;
             const isStep6UserPR = req.category === 'WO Existing' && stepIndex === 5;
-            
             const latestHistory = req.revisionHistory && req.revisionHistory.length > 0 ? req.revisionHistory[req.revisionHistory.length - 1] : null;
             const hasRecentRequesterResponse = latestHistory && latestHistory.resolvedAt;
-            
-            // Variabel isolated untuk form upload tiap card
             const upload = uploads[req.id];
             const isDraggingCard = dragActiveId === req.id;
 
@@ -267,28 +253,25 @@ export const ApprovalView: React.FC = () => {
                     <h4 className="text-xs font-bold text-neutral-900 mb-2 uppercase tracking-wide">
                       {isStep5PRUpload ? 'Lampirkan Purchase Request (PR)' : 'Lampirkan Purchase Order (PO)'}
                     </h4>
-                    
-                    {/* Menggunakan ID dinamis pengganti useRef */}
-                    <input 
-                      type="file" 
-                      accept=".pdf" 
+                    <input
+                      type="file"
+                      accept=".pdf"
                       id={`file-upload-${req.id}`}
-                      className="hidden" 
+                      className="hidden"
                       onChange={(e) => {
                         if (e.target.files?.[0]) processFileUpload(req.id, e.target.files[0]);
                         e.target.value = '';
-                      }} 
+                      }}
                     />
-                    
                     {!upload?.url ? (
-                      <label 
+                      <label
                         htmlFor={`file-upload-${req.id}`}
                         onDragOver={(e) => { e.preventDefault(); setDragActiveId(req.id); }}
                         onDragLeave={(e) => { e.preventDefault(); setDragActiveId(null); }}
                         onDrop={(e) => {
-                          e.preventDefault(); 
-                          setDragActiveId(null); 
-                          if(e.dataTransfer.files?.[0]) processFileUpload(req.id, e.dataTransfer.files[0]); 
+                          e.preventDefault();
+                          setDragActiveId(null);
+                          if(e.dataTransfer.files?.[0]) processFileUpload(req.id, e.dataTransfer.files[0]);
                         }}
                         className={`w-full py-10 border border-dashed rounded-lg flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors ${isDraggingCard ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-300 bg-white hover:bg-neutral-50'}`}
                       >
@@ -303,17 +286,17 @@ export const ApprovalView: React.FC = () => {
                           <FileText className="w-4 h-4 text-neutral-400 shrink-0"/>
                           <span className="text-xs font-medium text-neutral-900 truncate">{upload.name}</span>
                         </div>
-                        <button 
-                          onClick={() => setUploads(prev => { const next = {...prev}; delete next[req.id]; return next; })} 
+                        <button
+                          onClick={() => setUploads(prev => { const next = {...prev}; delete next[req.id]; return next; })}
                           className="text-rose-600 hover:text-rose-700 text-xs font-medium shrink-0 p-1"
                         >
                           <X className="w-4 h-4"/>
                         </button>
                       </div>
                     )}
-                    <button 
-                      onClick={() => isStep5PRUpload ? executeUploadPR(req.id) : executeUploadPO(req.id)} 
-                      disabled={!upload?.url} 
+                    <button
+                      onClick={() => isStep5PRUpload ? executeUploadPR(req.id) : executeUploadPO(req.id)}
+                      disabled={!upload?.url}
                       className="mt-3 w-full py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-medium disabled:opacity-50 transition-colors flex items-center justify-center gap-2 shadow-sm"
                     >
                       {isStep5PRUpload ? 'Kirim ke User' : 'Sahkan PO'} <ArrowRight className="w-4 h-4" />
@@ -333,7 +316,6 @@ export const ApprovalView: React.FC = () => {
                     </button>
                   </div>
                 )}
-                
                 {!isStep5PRUpload && !isStep8POUpload && (
                   <div className="mt-4 pt-4 border-t border-neutral-100 text-right">
                     <button onClick={() => setRejectingReq(req)} className="text-xs font-medium text-rose-600 hover:text-rose-700">
@@ -364,6 +346,9 @@ export const ApprovalView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* PERBAIKAN: Menempatkan komponen modal di struktur paling bawah */}
+      <SignatureModal isOpen={showSignatureModal} onClose={() => setShowSignatureModal(false)} />
     </div>
   );
 };

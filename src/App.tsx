@@ -4,42 +4,33 @@ import { Header } from './components/Header';
 import { PengajuanView } from './components/PengajuanView';
 import { TrackingView } from './components/TrackingView';
 import { ApprovalView } from './components/ApprovalView';
-import { TTDView } from './components/TTDView';
-import { ProfileView } from './components/ProfileView';
 import { LoginView } from './components/LoginView';
 import { FullScreenPdfViewer } from './components/FullScreenPdfViewer';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 const MainContent: React.FC = () => {
   const { isLoggedIn, activeTab, notification, fullScreenPreviewRequest, setFullScreenPreviewRequest } = useApp();
-
+  
   if (!isLoggedIn) {
     return <LoginView />;
   }
-
+  
   return (
     <div className="min-h-screen flex flex-col bg-neutral-50/70 text-neutral-900">
-      {/* Top Header Navigation (Pengajuan | Tracking | Approval | TTD | Profile) */}
       <Header />
-
-      {/* Main Dynamic Content Area */}
       <main className="flex-1 pb-16">
         {activeTab === 'pengajuan' && <PengajuanView />}
         {activeTab === 'tracking' && <TrackingView />}
         {activeTab === 'approval' && <ApprovalView />}
-        {activeTab === 'ttd' && <TTDView />}
-        {activeTab === 'profile' && <ProfileView />}
       </main>
-
-      {/* Full-screen PDF Document Viewer with per-page review and audit trail */}
+      
       {fullScreenPreviewRequest && (
         <FullScreenPdfViewer
           request={fullScreenPreviewRequest}
           onClose={() => setFullScreenPreviewRequest(null)}
         />
       )}
-
-      {/* Floating System Notification Toast */}
+      
       {notification && (
         <div className="fixed bottom-6 right-6 z-50 transition-all animate-bounce-subtle">
           <div
@@ -62,8 +53,7 @@ const MainContent: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Clean Subtle Footer */}
+      
       <footer className="border-t border-neutral-200 bg-white py-6">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-neutral-500">
           <div>

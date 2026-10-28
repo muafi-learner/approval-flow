@@ -8,20 +8,14 @@ import {
 } from 'lucide-react';
 
 export const TrackingView: React.FC = () => {
-  const { 
-    requests, 
-    selectedRequestForDetail, 
-    setSelectedRequestForDetail, 
-    submitRevisionByRequester, 
-    currentUser, 
-    showToast, 
-    setActiveTab, 
-    setFullScreenPreviewRequest 
+  const {
+    requests, selectedRequestForDetail, setSelectedRequestForDetail,
+    submitRevisionByRequester, currentUser, showToast,
+    setActiveTab, setFullScreenPreviewRequest
   } = useApp();
-  
+
   const [filter, setFilter] = useState<'all' | 'in_progress' | 'needs_revision' | 'completed' | 'rejected'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  
   const [submittingRevisionReq, setSubmittingRevisionReq] = useState<ApprovalRequest | null>(null);
   const [requesterNote, setRequesterNote] = useState('');
   const [newPdfFile, setNewPdfFile] = useState<{ name: string; dataUrl: string } | null>(null);
@@ -32,20 +26,14 @@ export const TrackingView: React.FC = () => {
   const [detailBlobUrl, setDetailBlobUrl] = useState('');
 
   const myRequests = requests.filter(req => {
-    return (
-      req.requesterId === currentUser?.id ||
-      req.requesterName.toLowerCase() === currentUser?.name.toLowerCase()
-    );
+    return req.requesterId === currentUser?.id || req.requesterName.toLowerCase() === currentUser?.name.toLowerCase();
   });
 
   const filteredRequests = myRequests.filter(req => {
     if (filter !== 'all' && req.status !== filter) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      return (
-        req.title.toLowerCase().includes(q) ||
-        req.id.toLowerCase().includes(q)
-      );
+      return req.title.toLowerCase().includes(q) || req.id.toLowerCase().includes(q);
     }
     return true;
   });
@@ -79,20 +67,18 @@ export const TrackingView: React.FC = () => {
     }
     const reader = new FileReader();
     reader.onload = () => {
-      const buffer = reader.result as ArrayBuffer;
-      const dataUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/pdf' }));
       setNewPdfFile({
         name: file.name,
-        dataUrl,
+        dataUrl: reader.result as string,
       });
     };
-    reader.readAsArrayBuffer(file);
+    reader.readAsDataURL(file);
   };
 
   const handleConfirmSubmitRevision = async () => {
     if (!submittingRevisionReq) return;
     if (revisionMode === 'wording_only' && !requesterNote.trim()) {
-      showToast('Harap isi catatan perbaikan jika tidak mengunggah file baru.', 'error');
+      showToast('Harap isi catatan perbaikan jika tidak mengunggah file.', 'error');
       return;
     }
     if (revisionMode === 'with_file' && !newPdfFile) {
@@ -118,39 +104,42 @@ export const TrackingView: React.FC = () => {
     }
   };
 
-  const rawDetailUrl = detailActiveDocType === 'PR' && selectedRequestForDetail?.prPdfDataUrl 
-    ? selectedRequestForDetail.prPdfDataUrl 
-    : detailActiveDocType === 'PO' && selectedRequestForDetail?.poPdfDataUrl 
-      ? selectedRequestForDetail.poPdfDataUrl 
-      : selectedRequestForDetail?.pdfDataUrl || '';
-  
+  const rawDetailUrl = detailActiveDocType === 'PR' && selectedRequestForDetail?.prPdfDataUrl
+    ? selectedRequestForDetail.prPdfDataUrl
+    : detailActiveDocType === 'PO' && selectedRequestForDetail?.poPdfDataUrl
+    ? selectedRequestForDetail.poPdfDataUrl
+    : selectedRequestForDetail?.pdfDataUrl || '';
+
   useEffect(() => {
     if (!rawDetailUrl) return;
-    let url = rawDetailUrl;
-    if (rawDetailUrl.startsWith('data:')) {
-      try {
-        const arr = rawDetailUrl.split(',');
-        const bstr = atob(arr[1]);
-        const u8arr = new Uint8Array(bstr.length);
-        for (let i = 0; i < bstr.length; i++) {
-          u8arr[i] = bstr.charCodeAt(i);
-        }
-        url = URL.createObjectURL(new Blob([u8arr], { type: 'application/pdf' }));
-      } catch (e) {
-        console.error('Gagal mengonversi Base64 ke Blob:', e);
-      }
-    }
-    setDetailBlobUrl(url);
+    let isCancelled = false;
+    let objectUrl = '';
     
-    return () => {
-      if (rawDetailUrl.startsWith('data:')) {
-        URL.revokeObjectURL(url);
+    const loadBlobAsync = async () => {
+      try {
+        const fetchUrl = rawDetailUrl.startsWith('data:') 
+          ? rawDetailUrl 
+          : (rawDetailUrl.includes('?') ? `${rawDetailUrl}&t=${Date.now()}` : `${rawDetailUrl}?t=${Date.now()}`);
+          
+        const res = await fetch(fetchUrl);
+        const blob = await res.blob();
+        if (!isCancelled) {
+          objectUrl = URL.createObjectURL(blob);
+          setDetailBlobUrl(objectUrl);
+        }
+      } catch (err) {
+        console.error('Konversi Blob gagal:', err);
       }
+    };
+    
+    loadBlobAsync();
+    return () => {
+      isCancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [rawDetailUrl]);
 
   const needsRevisionCount = myRequests.filter(r => r.status === 'needs_revision').length;
-  
   const hasRevisionHistory = selectedRequestForDetail?.revisionHistory && selectedRequestForDetail.revisionHistory.length > 0;
   const hasAuditNotes = selectedRequestForDetail?.auditNotes && selectedRequestForDetail.auditNotes.length > 0;
   const showNotesSection = hasRevisionHistory || hasAuditNotes;
@@ -206,7 +195,7 @@ export const TrackingView: React.FC = () => {
             const isCompleted = req.status === 'completed';
             const isNeedsRevision = req.status === 'needs_revision';
             const lastNote = (req.auditNotes || []).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-            
+
             return (
               <div key={req.id} className={`bg-white rounded-xl border p-5 transition-all shadow-sm ${isNeedsRevision ? 'border-neutral-200 border-l-4 border-l-amber-400' : 'border-neutral-200 hover:border-neutral-300'}`}>
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-4 border-b border-neutral-100">
@@ -329,7 +318,7 @@ export const TrackingView: React.FC = () => {
                   </label>
                 </div>
               </div>
-              
+
               {revisionMode === 'with_file' && (
                 <div>
                   <label className="block text-xs font-semibold text-neutral-700 mb-2">File Revisi (PDF)</label>
@@ -390,8 +379,6 @@ export const TrackingView: React.FC = () => {
             </div>
             
             <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-neutral-50/30">
-              
-              {/* CATATAN PERBAIKAN / RIWAYAT REVISI YANG DIPERBAIKI */}
               {showNotesSection && (
                 <div>
                   <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-3">Catatan & Riwayat Perbaikan</h4>
@@ -412,7 +399,6 @@ export const TrackingView: React.FC = () => {
                         )}
                       </div>
                     ))}
-
                     {selectedRequestForDetail.auditNotes?.map(note => (
                       <div key={note.id} className="p-4 rounded-xl border bg-white border-neutral-200/70 text-xs">
                         <div className="flex items-center justify-between mb-1">
@@ -430,7 +416,6 @@ export const TrackingView: React.FC = () => {
 
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-3">
-                  {/* TAB NAVIGASI MINIMALIS */}
                   <div className="flex items-center gap-4">
                     <button onClick={() => setDetailActiveDocType('WO')} className={`text-xs font-semibold pb-1 transition-all ${detailActiveDocType === 'WO' ? 'border-b-2 border-neutral-900 text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}>
                       {selectedRequestForDetail.category === 'Design' ? 'Design Drawing' : 'WO Existing'}
@@ -462,10 +447,10 @@ export const TrackingView: React.FC = () => {
                 </div>
                 <div className="w-full h-[400px] border border-neutral-200/80 rounded-xl overflow-hidden bg-white shadow-sm">
                   {detailBlobUrl ? (
-                    <iframe 
-                      src={`${detailBlobUrl}#toolbar=0&navpanes=0&view=FitH`} 
-                      title="PDF Preview" 
-                      className="w-full h-full border-0" 
+                    <iframe
+                      src={`${detailBlobUrl}#toolbar=0&navpanes=0&view=FitH`}
+                      title="PDF Preview"
+                      className="w-full h-full border-0"
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center">

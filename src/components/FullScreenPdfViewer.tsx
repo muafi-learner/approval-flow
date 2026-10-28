@@ -26,26 +26,27 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
     if (!activeUrl) return;
     let isCancelled = false;
     let objectUrl = '';
-
+    
     const loadBlobAsync = async () => {
       try {
-        if (activeUrl.startsWith('data:')) {
-          const res = await fetch(activeUrl);
-          const blob = await res.blob();
-          if (!isCancelled) {
-            objectUrl = URL.createObjectURL(blob);
-            setBlobUrl(objectUrl);
-          }
-        } else {
-          if (!isCancelled) setBlobUrl(activeUrl);
+        // PERBAIKAN: Selalu fetch URL sebagai Blob di latar belakang agar iframe Chrome tidak crash
+        const fetchUrl = activeUrl.startsWith('data:') 
+          ? activeUrl 
+          : (activeUrl.includes('?') ? `${activeUrl}&t=${Date.now()}` : `${activeUrl}?t=${Date.now()}`);
+          
+        const res = await fetch(fetchUrl);
+        const blob = await res.blob();
+        
+        if (!isCancelled) {
+          objectUrl = URL.createObjectURL(blob);
+          setBlobUrl(objectUrl);
         }
       } catch (err) {
         console.error('Konversi Blob gagal:', err);
       }
     };
-
+    
     loadBlobAsync();
-
     return () => {
       isCancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -98,7 +99,6 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
           </div>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-900 transition-colors p-1"><X className="w-5 h-5" /></button>
         </header>
-
         <div className="flex-1 flex overflow-hidden">
           <main className="flex-1 bg-neutral-200/60 relative p-0">
             {blobUrl ? (
@@ -107,7 +107,6 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
               <div className="flex h-full items-center justify-center bg-white"><div className="w-8 h-8 border-4 border-neutral-900 border-t-transparent rounded-full animate-spin" /></div>
             )}
           </main>
-
           <aside className="w-80 bg-white border-l border-neutral-100 flex flex-col shrink-0 z-10">
             <div className="pt-6 px-6 pb-4 flex items-center justify-between border-b border-neutral-100">
               <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">Catatan Dokumen</h3>
