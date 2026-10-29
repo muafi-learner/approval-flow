@@ -274,9 +274,10 @@ export const PengajuanView: React.FC = () => {
                             value={step.userId} onChange={e => handleUpdateApproverUser(step.id, e.target.value)}
                             className="flex-1 px-3 py-2 text-sm bg-transparent border border-neutral-200 rounded-lg focus:outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900 cursor-pointer transition-colors"
                           >
-                            {users.map(u => (
+                            {/* Tambahkan pengecekan array users sebelum map */}
+                            {users && users.length > 0 ? users.map(u => (
                               <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
-                            ))}
+                            )) : <option value="">Memuat data...</option>}
                           </select>
                           <button type="button" onClick={() => setApproverFlow(prev => prev.filter(item => item.id !== step.id))} className="p-2 text-neutral-400 hover:text-rose-600 transition-colors">
                             <Trash2 className="w-4 h-4" />
@@ -287,6 +288,11 @@ export const PengajuanView: React.FC = () => {
                   )}
                   
                   <button type="button" onClick={() => {
+                    // PERBAIKAN: Berikan fallback yang sangat aman jika users kosong
+                    if (!users || users.length === 0) {
+                      showToast('Menunggu data pengguna dimuat dari server...', 'info');
+                      return;
+                    }
                     const availableUsers = users.filter(u => u.id !== currentUser.id && !approverFlow.some(a => a.userId === u.id));
                     const u = availableUsers.length > 0 ? availableUsers[0] : users[0];
                     setApproverFlow(prev => [...prev, { id: Date.now().toString(), name: u.name, role: u.role, userId: u.id }]);
