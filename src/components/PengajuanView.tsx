@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Upload, Plus, Trash2, ArrowRight, RefreshCcw, FileText, AlertCircle, Check } from 'lucide-react';
+import { Upload, Plus, Trash2, ArrowRight, FileText, AlertCircle, Check } from 'lucide-react';
 import { analyzePdfApproverLayout } from '../services/pdfTextExtractor';
 import { DetectedSlot } from '../types';
 
@@ -23,15 +23,13 @@ export const PengajuanView: React.FC = () => {
   const [isScanningPdf, setIsScanningPdf] = useState(false);
   const [detectedPageCount, setDetectedPageCount] = useState<number>(1);
   const [selectedPages, setSelectedPages] = useState<number[]>([]);
-  const [forceNewPage, setForceNewPage] = useState(false); // State baru untuk checkbox Halaman Baru
+  const [forceNewPage, setForceNewPage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pdfDetectedSlots, setPdfDetectedSlots] = useState<any[]>([]);
-
   const [approverFlow, setApproverFlow] = useState<ApproverInput[]>([]);
-  const [selectedUserManagerId, setSelectedUserManagerId] = useState<string>('');
 
   const processAndScanPdfBuffer = async (buffer: ArrayBuffer, fileName: string, dataUrl: string) => {
     setIsScanningPdf(true);
@@ -41,7 +39,6 @@ export const PengajuanView: React.FC = () => {
         setDetectedPageCount(analysis.pageCount);
         setSelectedPages(Array.from({ length: analysis.pageCount }, (_, i) => i + 1));
       }
-      
       if (analysis.multiPageFlow && analysis.multiPageFlow.length > 0) {
         setPdfDetectedSlots(analysis.multiPageFlow);
       } else {
@@ -59,9 +56,7 @@ export const PengajuanView: React.FC = () => {
     if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
       return showToast('Gunakan file berformat PDF.', 'error');
     }
-
     setApprovalName(prev => prev.trim() ? prev : file.name.replace(/\.pdf$/i, '').replace(/[-_]/g, ' '));
-
     const dataUrlReader = new FileReader();
     dataUrlReader.onload = () => {
       const base64DataUrl = dataUrlReader.result as string;
@@ -109,12 +104,10 @@ export const PengajuanView: React.FC = () => {
     if (!selectedFile || !selectedFile.dataUrl) return showToast('Harap unggah file dokumen PDF terlebih dahulu.', 'error');
     if (selectedPages.length === 0) return showToast('Harap pilih minimal satu halaman untuk dibubuhkan tanda tangan.', 'error');
     
-    if (requestCategory === 'Design' && approverFlow.length === 0) {
-      return showToast('Alur persetujuan kosong. Harap tentukan minimal satu approver.', 'error');
+    if (approverFlow.length === 0) {
+      return showToast('Alur persetujuan kosong. Harap tentukan minimal satu penanda tangan.', 'error');
     }
-    if (requestCategory === 'WO Existing' && !selectedUserManagerId) {
-      return showToast('Harap pilih User Manager untuk alur WO Existing.', 'error');
-    }
+    
     setShowConfirmModal(true);
   };
 
@@ -122,29 +115,11 @@ export const PengajuanView: React.FC = () => {
     setShowConfirmModal(false);
     setIsSubmitting(true);
     try {
-      let finalApprovers = approverFlow;
-      if (requestCategory === 'WO Existing') {
-        const userManager = users.find(u => u.id === selectedUserManagerId)!;
-        const hadi = users.find(u => u.name.includes('Hadi')) || users[0];
-        const ivan = users.find(u => u.name.includes('Ivan')) || users[0];
-        const mega = users.find(u => u.name.includes('Mega')) || users[0];
-        finalApprovers = [
-          { id: 'wo_1', userId: currentUser.id, name: currentUser.name, role: currentUser.role, isMatchedFromPdf: false },
-          { id: 'wo_2', userId: userManager.id, name: userManager.name, role: userManager.role, isMatchedFromPdf: false },
-          { id: 'wo_3', userId: hadi.id, name: hadi.name, role: 'SCM Manager', isMatchedFromPdf: false },
-          { id: 'wo_4', userId: ivan.id, name: ivan.name, role: 'Managing Director', isMatchedFromPdf: false },
-          { id: 'wo_5', userId: mega.id, name: mega.name, role: 'Purchasing Supervisor', isMatchedFromPdf: false },
-          { id: 'wo_6', userId: currentUser.id, name: currentUser.name, role: currentUser.role + ' (PR TTD)', isMatchedFromPdf: false },
-          { id: 'wo_7', userId: mega.id, name: mega.name, role: 'Purchasing (PR TTD)', isMatchedFromPdf: false },
-          { id: 'wo_8', userId: mega.id, name: mega.name, role: 'Purchasing (PO)', isMatchedFromPdf: false }
-        ];
-      }
-
-      const formattedApprovers = finalApprovers.map(a => {
+      const formattedApprovers = approverFlow.map(a => {
         const matchedSlot = pdfDetectedSlots.find(
-          (slot: any) => slot.userId === a.userId ||
-                   slot.userName.toLowerCase() === a.name.toLowerCase() ||
-                   slot.roleTitle.toLowerCase() === a.role.toLowerCase()
+          (slot: any) => slot.userId === a.userId || 
+                         slot.userName.toLowerCase() === a.name.toLowerCase() || 
+                         slot.roleTitle.toLowerCase() === a.role.toLowerCase()
         );
         return {
           userId: a.userId,
@@ -161,10 +136,11 @@ export const PengajuanView: React.FC = () => {
         selectedFile.dataUrl,
         formattedApprovers,
         detectedPageCount,
-        requestCategory as 'Design' | 'WO Existing',
+        requestCategory,
         selectedPages,
-        forceNewPage // Mengirimkan status halaman baru
+        forceNewPage
       );
+      
       setActiveTab('tracking');
     } catch (err: any) {
       showToast(err?.message || 'Pengajuan gagal dikirim.', 'error');
@@ -182,7 +158,6 @@ export const PengajuanView: React.FC = () => {
       
       <form onSubmit={handleInitialSubmit} className="space-y-10">
         
-        {/* BAGIAN 1: FILE UPLOAD */}
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-neutral-900">1. Dokumen Utama</h2>
@@ -221,7 +196,6 @@ export const PengajuanView: React.FC = () => {
           )}
         </section>
 
-        {/* BAGIAN 2: DETAIL PENGAJUAN */}
         {selectedFile && (
           <section className="animate-in fade-in slide-in-from-bottom-4 duration-300">
             <h2 className="text-sm font-bold text-neutral-900 mb-5">2. Detail Pengajuan</h2>
@@ -236,7 +210,7 @@ export const PengajuanView: React.FC = () => {
                 >
                   <option value="" disabled>Pilih Kategori Dokumen</option>
                   <option value="Design">Design Drawing</option>
-                  <option value="WO Existing">WO Existing</option>
+                  <option value="WO Existing">In General</option>
                 </select>
               </div>
 
@@ -267,8 +241,8 @@ export const PengajuanView: React.FC = () => {
                         <input type="checkbox" checked={forceNewPage} onChange={e => setForceNewPage(e.target.checked)} className="w-4 h-4 accent-neutral-900 border-neutral-300 rounded cursor-pointer" />
                       </div>
                       <div className="flex flex-col">
-                        <span className="text-xs font-semibold text-neutral-900">Paksa Halaman Baru (Khusus WO)</span>
-                        <span className="text-[10px] text-neutral-500 mt-0.5">Centang ini jika baris terakhir PDF sudah penuh. Stempel akan otomatis dicetak di Kanan Atas pada halaman PDF yang baru.</span>
+                        <span className="text-xs font-semibold text-neutral-900">Paksa Halaman Baru (Khusus In General)</span>
+                        <span className="text-[10px] text-neutral-500 mt-0.5">Centang ini jika baris terakhir PDF sudah penuh. Sistem akan otomatis menambahkan satu halaman kosong di bagian paling belakang dokumen khusus untuk menampung seluruh stempel.</span>
                       </div>
                     </label>
                   </div>
@@ -278,7 +252,6 @@ export const PengajuanView: React.FC = () => {
           </section>
         )}
 
-        {/* BAGIAN 3: ALUR PERSETUJUAN */}
         {selectedFile && (
           <section className="animate-in fade-in slide-in-from-bottom-4 duration-300 delay-100">
             <h2 className="text-sm font-bold text-neutral-900 mb-5">3. Alur Otorisasi</h2>
@@ -287,52 +260,6 @@ export const PengajuanView: React.FC = () => {
               {requestCategory === '' ? (
                 <div className="py-6 text-center">
                   <p className="text-sm text-neutral-500">Pilih Kategori Dokumen di atas untuk memuat alur.</p>
-                </div>
-              ) : requestCategory === 'WO Existing' ? (
-                <div className="space-y-6">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">User Manager (Atasan Pengaju)</label>
-                    <select value={selectedUserManagerId} onChange={e => setSelectedUserManagerId(e.target.value)} className="w-full px-4 py-2.5 text-sm bg-transparent border border-neutral-200 rounded-lg focus:outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900 cursor-pointer transition-colors">
-                      <option value="">-- Tentukan Manager --</option>
-                      {users.filter(u => u.id !== currentUser.id).map(u => (
-                        <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mb-3">Jalur Paten Sistem</label>
-                    <div className="relative pl-4 space-y-4 before:absolute before:left-[7px] before:top-2 before:bottom-2 before:w-px before:bg-neutral-200">
-                      <div className="relative flex items-center gap-4">
-                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
-                        <div className="text-sm font-semibold text-neutral-900">{currentUser.name} <span className="text-xs font-normal text-neutral-500 ml-1">sebagai Pengaju</span></div>
-                      </div>
-                      <div className="relative flex items-center gap-4">
-                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
-                        <div className="text-sm font-semibold text-neutral-900">{selectedUserManagerId ? users.find(u => u.id === selectedUserManagerId)?.name : '...'} <span className="text-xs font-normal text-neutral-500 ml-1">sebagai Manager</span></div>
-                      </div>
-                      <div className="relative flex items-center gap-4">
-                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
-                        <div className="text-sm font-semibold text-neutral-900">Hadi <span className="text-xs font-normal text-neutral-500 ml-1">sebagai SCM Manager</span></div>
-                      </div>
-                      <div className="relative flex items-center gap-4">
-                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
-                        <div className="text-sm font-semibold text-neutral-900">Ivan <span className="text-xs font-normal text-neutral-500 ml-1">sebagai Managing Director</span></div>
-                      </div>
-                      <div className="relative flex items-center gap-4">
-                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
-                        <div className="text-sm font-semibold text-neutral-900">Mega <span className="text-xs font-normal text-neutral-500 ml-1">sebagai Purch. Supervisor</span></div>
-                      </div>
-                      <div className="relative flex items-center gap-4">
-                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
-                        <div className="text-sm font-semibold text-neutral-900">{currentUser.name} <span className="text-xs font-normal text-neutral-500 ml-1">sebagai PR Signer</span></div>
-                      </div>
-                      <div className="relative flex items-center gap-4">
-                        <div className="absolute -left-[11px] w-2 h-2 rounded-full bg-neutral-300 ring-4 ring-white" />
-                        <div className="text-sm font-semibold text-neutral-900">Mega <span className="text-xs font-normal text-neutral-500 ml-1">sebagai PO/PR Signer</span></div>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -358,6 +285,7 @@ export const PengajuanView: React.FC = () => {
                       ))}
                     </div>
                   )}
+                  
                   <button type="button" onClick={() => {
                     const availableUsers = users.filter(u => u.id !== currentUser.id && !approverFlow.some(a => a.userId === u.id));
                     const u = availableUsers.length > 0 ? availableUsers[0] : users[0];
@@ -391,7 +319,7 @@ export const PengajuanView: React.FC = () => {
               <h3 className="text-base font-bold text-neutral-900">Kirim Dokumen?</h3>
             </div>
             <p className="text-sm text-neutral-600 leading-relaxed mb-6">
-              Dokumen <strong>{approvalName || 'tanpa judul'}</strong> akan disirkulasikan ke <strong>{requestCategory === 'WO Existing' ? 8 : approverFlow.length} approver</strong>. Pastikan pengaturan halaman tanda tangan sudah sesuai.
+              Dokumen <strong>{approvalName || 'tanpa judul'}</strong> akan disirkulasikan ke <strong>{approverFlow.length} approver</strong>. Pastikan urutan dan pengaturan halamannya sudah sesuai.
             </p>
             <div className="flex flex-col gap-2">
               <button type="button" onClick={executeFinalSubmit} className="w-full py-3 text-sm font-semibold text-white bg-neutral-900 rounded-xl hover:bg-neutral-800 transition-colors text-center shadow-sm">
