@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ApprovalRequest } from '../types';
 import { SignatureModal } from './SignatureModal';
-import { X, RotateCcw, Check, FileDown } from 'lucide-react';
+import { X, RotateCcw, Check, FileDown, AlertTriangle, RefreshCw, DownloadCloud } from 'lucide-react';
 
 export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: () => void}> = ({ request, onClose }) => {
   const { currentUser, addAuditNote, performAutoSignApproval, requestRevision, showToast } = useApp();
@@ -11,6 +11,8 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
   
   const [blobUrl, setBlobUrl] = useState('');
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
+  const [downloadError, setDownloadError] = useState<boolean>(false);
+  const [retryTrigger, setRetryTrigger] = useState<number>(0);
   
   const [selectedNotePage, setSelectedNotePage] = useState<number>(1);
   const [newNoteText, setNewNoteText] = useState('');
@@ -32,10 +34,10 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
     
     const loadBlobWithProgress = () => {
       setDownloadProgress(0);
+      setDownloadError(false);
       setBlobUrl('');
       
       if (activeUrl.startsWith('data:')) {
-        // Jika sudah berupa data lokal/base64, langsung render
         setDownloadProgress(100);
         setTimeout(() => { if(!isCancelled) setBlobUrl(activeUrl); }, 300);
         return;
@@ -58,12 +60,12 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
           objectUrl = URL.createObjectURL(xhr.response);
           setBlobUrl(objectUrl);
         } else {
-          showToast('Gagal memuat pratinjau dokumen dari server.', 'error');
+          if (!isCancelled) setDownloadError(true);
         }
       };
 
       xhr.onerror = () => {
-        if (!isCancelled) showToast('Koneksi terputus saat mengunduh PDF.', 'error');
+        if (!isCancelled) setDownloadError(true);
       };
 
       xhr.send();
@@ -75,7 +77,7 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
       isCancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [activeUrl, showToast]);
+  }, [activeUrl, retryTrigger]);
 
   const allAuditNotes = [...(request.auditNotes || [])].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const currentStep = request.flow[request.currentStepIndex];
@@ -131,6 +133,27 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
           <main className="flex-1 bg-neutral-200/60 relative p-0">
             {blobUrl ? (
               <iframe src={`${blobUrl}#toolbar=0&navpanes=0`} className="w-full h-full border-none bg-white block animate-in fade-in" title="PDF Viewer" />
+            ) : downloadError ? (
+              <div className="flex flex-col h-full items-center justify-center bg-white animate-in zoom-in-95 duration-200 p-6">
+                <div className="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mb-5 border border-rose-100">
+                  <AlertTriangle className="w-8 h-8 text-rose-500" />
+                </div>
+                <h3 className="text-lg font-bold text-neutral-900 mb-2 text-center">Koneksi Terputus Saat Memuat Dokumen</h3>
+                <p className="text-sm text-neutral-600 max-w-md text-center mb-8 leading-relaxed">
+                  Dokumen ini berukuran cukup besar. Proses pratinjau terhenti karena jaringan tidak stabil atau interupsi VPN di tengah jalan.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md mb-6">
+                  <button onClick={() => setRetryTrigger(prev => prev + 1)} className="flex-1 py-3 bg-neutral-900 hover:bg-neutral-800 text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm">
+                    <RefreshCw className="w-4 h-4" /> Coba Muat Ulang
+                  </button>
+                  <a href={activeUrl} download target="_blank" rel="noreferrer" className="flex-1 py-3 bg-white hover:bg-neutral-50 text-neutral-700 border border-neutral-200 text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm">
+                    <DownloadCloud className="w-4 h-4" /> Unduh Langsung
+                  </a>
+                </div>
+                <div className="text-xs text-neutral-500 bg-neutral-50 px-4 py-3 rounded-lg border border-neutral-100 max-w-md text-center">
+                  <span className="font-semibold text-neutral-700">Saran:</span> Jika terus gagal, coba matikan VPN sementara atau pastikan koneksi internet Anda stabil.
+                </div>
+              </div>
             ) : (
               <div className="flex flex-col h-full items-center justify-center bg-white">
                 <FileDown className="w-8 h-8 text-neutral-300 mb-4 animate-bounce" />
@@ -190,7 +213,6 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
         </div>
       </div>
       
-      {/* Modal Peringatan Tanda Tangan */}
       {showForceSignatureModal && <SignatureModal isOpen={showForceSignatureModal} onClose={() => setShowForceSignatureModal(false)} />}
     </>
   );
