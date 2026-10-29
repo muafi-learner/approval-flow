@@ -2,13 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ApprovalRequest } from '../types';
 import { SignatureModal } from './SignatureModal';
-import { X, RotateCcw, Check } from 'lucide-react';
+import { X, RotateCcw, Check, FileDown } from 'lucide-react';
 
 export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: () => void}> = ({ request, onClose }) => {
   const { currentUser, addAuditNote, performAutoSignApproval, requestRevision, showToast } = useApp();
   const [activeDocType, setActiveDocType] = useState<'WO' | 'PR' | 'PO'>('WO');
   const [activeUrl, setActiveUrl] = useState<string>(request.pdfDataUrl);
+  
   const [blobUrl, setBlobUrl] = useState('');
+  const [downloadProgress, setDownloadProgress] = useState<number>(0);
+  
   const [selectedNotePage, setSelectedNotePage] = useState<number>(1);
   const [newNoteText, setNewNoteText] = useState('');
   const [isSigning, setIsSigning] = useState(false);
@@ -27,31 +30,52 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
     let isCancelled = false;
     let objectUrl = '';
     
-    const loadBlobAsync = async () => {
-      try {
-        // PERBAIKAN: Selalu fetch URL sebagai Blob di latar belakang agar iframe Chrome tidak crash
-        const fetchUrl = activeUrl.startsWith('data:') 
-          ? activeUrl 
-          : (activeUrl.includes('?') ? `${activeUrl}&t=${Date.now()}` : `${activeUrl}?t=${Date.now()}`);
-          
-        const res = await fetch(fetchUrl);
-        const blob = await res.blob();
-        
-        if (!isCancelled) {
-          objectUrl = URL.createObjectURL(blob);
-          setBlobUrl(objectUrl);
-        }
-      } catch (err) {
-        console.error('Konversi Blob gagal:', err);
+    const loadBlobWithProgress = () => {
+      setDownloadProgress(0);
+      setBlobUrl('');
+      
+      if (activeUrl.startsWith('data:')) {
+        // Jika sudah berupa data lokal/base64, langsung render
+        setDownloadProgress(100);
+        setTimeout(() => { if(!isCancelled) setBlobUrl(activeUrl); }, 300);
+        return;
       }
+
+      const fetchUrl = activeUrl.includes('?') ? `${activeUrl}&t=${Date.now()}` : `${activeUrl}?t=${Date.now()}`;
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', fetchUrl);
+      xhr.responseType = 'blob';
+
+      xhr.onprogress = (e) => {
+        if (e.lengthComputable && !isCancelled) {
+          const percent = Math.round((e.loaded / e.total) * 100);
+          setDownloadProgress(percent);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300 && !isCancelled) {
+          objectUrl = URL.createObjectURL(xhr.response);
+          setBlobUrl(objectUrl);
+        } else {
+          showToast('Gagal memuat pratinjau dokumen dari server.', 'error');
+        }
+      };
+
+      xhr.onerror = () => {
+        if (!isCancelled) showToast('Koneksi terputus saat mengunduh PDF.', 'error');
+      };
+
+      xhr.send();
     };
     
-    loadBlobAsync();
+    loadBlobWithProgress();
+    
     return () => {
       isCancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [activeUrl]);
+  }, [activeUrl, showToast]);
 
   const allAuditNotes = [...(request.auditNotes || [])].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const currentStep = request.flow[request.currentStepIndex];
@@ -64,7 +88,10 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
   };
 
   const handleAutoSign = async () => {
-    if (!currentUser.signatureBase64) return setShowForceSignatureModal(true);
+    if (!currentUser.signatureBase64) {
+      setShowForceSignatureModal(true);
+      return;
+    }
     setIsSigning(true);
     try {
       const res = await performAutoSignApproval(request.id);
@@ -99,14 +126,23 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
           </div>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-900 transition-colors p-1"><X className="w-5 h-5" /></button>
         </header>
+
         <div className="flex-1 flex overflow-hidden">
           <main className="flex-1 bg-neutral-200/60 relative p-0">
             {blobUrl ? (
-              <iframe src={`${blobUrl}#toolbar=0&navpanes=0`} className="w-full h-full border-none bg-white block" title="PDF Viewer" />
+              <iframe src={`${blobUrl}#toolbar=0&navpanes=0`} className="w-full h-full border-none bg-white block animate-in fade-in" title="PDF Viewer" />
             ) : (
-              <div className="flex h-full items-center justify-center bg-white"><div className="w-8 h-8 border-4 border-neutral-900 border-t-transparent rounded-full animate-spin" /></div>
+              <div className="flex flex-col h-full items-center justify-center bg-white">
+                <FileDown className="w-8 h-8 text-neutral-300 mb-4 animate-bounce" />
+                <div className="text-sm font-semibold text-neutral-900 mb-2">Mengunduh Dokumen...</div>
+                <div className="w-48 bg-neutral-100 rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-neutral-900 h-1.5 rounded-full transition-all duration-200" style={{ width: `${downloadProgress}%` }} />
+                </div>
+                <div className="text-[10px] font-bold text-neutral-400 mt-2">{downloadProgress}%</div>
+              </div>
             )}
           </main>
+
           <aside className="w-80 bg-white border-l border-neutral-100 flex flex-col shrink-0 z-10">
             <div className="pt-6 px-6 pb-4 flex items-center justify-between border-b border-neutral-100">
               <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">Catatan Dokumen</h3>
@@ -153,6 +189,8 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
           </aside>
         </div>
       </div>
+      
+      {/* Modal Peringatan Tanda Tangan */}
       {showForceSignatureModal && <SignatureModal isOpen={showForceSignatureModal} onClose={() => setShowForceSignatureModal(false)} />}
     </>
   );
