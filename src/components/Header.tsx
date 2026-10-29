@@ -1,25 +1,25 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import {
-  FileText,
-  Activity,
-  CheckSquare,
-  PenTool,
-  LogOut,
-  ChevronDown,
+import { 
+  FileText, 
+  Activity, 
+  CheckSquare, 
+  PenTool, 
+  LogOut, 
+  ChevronDown, 
   ShieldCheck
 } from 'lucide-react';
 import { SignatureModal } from './SignatureModal';
 
 export const Header: React.FC = () => {
-  const {
-    activeTab,
-    setActiveTab,
-    currentUser,
-    requests,
-    logout
+  const { 
+    activeTab, 
+    setActiveTab, 
+    currentUser, 
+    requests, 
+    logout 
   } = useApp();
-
+  
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -40,10 +40,11 @@ export const Header: React.FC = () => {
     return currentStep && currentStep.userId === currentUser.id;
   }).length;
 
+  // PERBAIKAN: Urutan tab diubah sesuai permintaan
   const navItems = [
-    { id: 'approval', label: 'Persetujuan', icon: CheckSquare, badge: incomingCount },
-    { id: 'pengajuan', label: 'Ajukan Surat', icon: FileText },
     { id: 'tracking', label: 'Surat Saya', icon: Activity },
+    { id: 'approval', label: 'Persetujuan', icon: CheckSquare, badge: incomingCount },
+    { id: 'pengajuan', label: 'Buat Surat', icon: FileText },
   ];
 
   return (
@@ -51,6 +52,7 @@ export const Header: React.FC = () => {
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-neutral-200 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14 sm:h-16 gap-4">
+            
             {/* Logo */}
             <div className="flex items-center gap-2.5 shrink-0">
               <div className="w-8 h-8 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-xs tracking-wider shadow-sm">
@@ -68,14 +70,13 @@ export const Header: React.FC = () => {
               {navItems.map(item => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
-
                 return (
                   <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id as any)}
                     className={`relative flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                      isActive
-                        ? 'bg-neutral-100 text-neutral-900'
+                      isActive 
+                        ? 'bg-neutral-100 text-neutral-900' 
                         : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-50'
                     }`}
                   >
@@ -122,11 +123,11 @@ export const Header: React.FC = () => {
                       {currentUser.role}
                     </div>
                   </div>
-
+                  
                   <div className="px-4 py-2">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium text-neutral-700">Tanda Tangan Digital</span>
-                      <button
+                      <button 
                         onClick={() => { setShowSignatureModal(true); setShowProfileDropdown(false); }}
                         className="text-[11px] text-neutral-500 hover:text-neutral-900 font-medium flex items-center gap-1 transition-colors cursor-pointer bg-neutral-100 px-2 py-0.5 rounded"
                       >
@@ -186,7 +187,7 @@ export const Header: React.FC = () => {
           </nav>
         </div>
       </header>
-
+      
       <SignatureModal isOpen={showSignatureModal} onClose={() => setShowSignatureModal(false)} />
     </>
   );

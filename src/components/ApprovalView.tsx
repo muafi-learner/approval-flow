@@ -3,23 +3,19 @@ import { useApp } from '../context/AppContext';
 import { ApprovalRequest } from '../types';
 import { SignatureModal } from './SignatureModal';
 import { 
-  CheckCircle, FileText, ArrowRight, AlertCircle, 
-  RotateCcw, Check, X, Upload 
+  CheckCircle, FileText, AlertCircle, 
+  RotateCcw, Check, X 
 } from 'lucide-react';
 
 export const ApprovalView: React.FC = () => {
-  const {
-    requests, currentUser, performAutoSignApproval, uploadPRAndForward,
-    uploadPOAndComplete, rejectPRToMega, rejectRequest, setActiveTab, showToast, setFullScreenPreviewRequest,
+  const { 
+    requests, currentUser, performAutoSignApproval, 
+    rejectRequest, setActiveTab, showToast, setFullScreenPreviewRequest,
   } = useApp();
-
+  
   const [signingId, setSigningId] = useState<string | null>(null);
   const [rejectingReq, setRejectingReq] = useState<ApprovalRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [uploads, setUploads] = useState<Record<string, { name: string, url: string }>>({});
-  const [dragActiveId, setDragActiveId] = useState<string | null>(null);
-  
-  // PERBAIKAN: State untuk mengontrol pop-up modal tanda tangan
   const [showSignatureModal, setShowSignatureModal] = useState(false);
 
   const incomingRequests = requests.filter(r => {
@@ -37,7 +33,6 @@ export const ApprovalView: React.FC = () => {
   const handleOneClickSign = async (req: ApprovalRequest) => {
     if (!currentUser.signatureBase64) {
       showToast('Tanda tangan digital belum diatur.', 'error');
-      // PERBAIKAN: Munculkan pop-up alih-alih pindah halaman
       setShowSignatureModal(true);
       return;
     }
@@ -56,41 +51,9 @@ export const ApprovalView: React.FC = () => {
     }
   };
 
-  const processFileUpload = (reqId: string, file: File) => {
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      return showToast('Harap unggah file berformat PDF.', 'error');
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setUploads(prev => ({
-        ...prev,
-        [reqId]: { name: file.name, url: reader.result as string }
-      }));
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const executeUploadPR = (reqId: string) => {
-    const upload = uploads[reqId];
-    if (!upload?.url) return showToast('Harap unggah file PR terlebih dahulu.', 'error');
-    uploadPRAndForward(reqId, upload.name, upload.url);
-    setUploads(prev => { const next = { ...prev }; delete next[reqId]; return next; });
-  };
-
-  const executeUploadPO = async (reqId: string) => {
-    const upload = uploads[reqId];
-    if (!upload?.url) return showToast('Harap unggah file PO terlebih dahulu.', 'error');
-    await uploadPOAndComplete(reqId, upload.name, upload.url);
-    setUploads(prev => { const next = { ...prev }; delete next[reqId]; return next; });
-  };
-
   const handleConfirmReject = () => {
     if (!rejectingReq) return;
-    if (rejectingReq.category === 'WO Existing' && rejectingReq.currentStepIndex === 5) {
-      rejectPRToMega(rejectingReq.id, rejectReason || 'Perbaikan PR diminta oleh User');
-    } else {
-      rejectRequest(rejectingReq.id, rejectReason || 'Ditolak oleh approver');
-    }
+    rejectRequest(rejectingReq.id, rejectReason || 'Ditolak oleh approver');
     setRejectingReq(null);
     setRejectReason('');
   };
@@ -121,7 +84,6 @@ export const ApprovalView: React.FC = () => {
               <span className="font-semibold">Tanda tangan digital belum diatur.</span> Anda perlu membuat tanda tangan sebelum menyetujui dokumen.
             </div>
           </div>
-          {/* PERBAIKAN: Ubah aksi tombol dari ganti tab menjadi buka modal */}
           <button onClick={() => setShowSignatureModal(true)} className="px-4 py-2 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shrink-0 shadow-sm">
             Atur Tanda Tangan
           </button>
@@ -166,13 +128,9 @@ export const ApprovalView: React.FC = () => {
             const stepIndex = req.currentStepIndex;
             const currentStep = req.flow[stepIndex];
             const isSigning = signingId === req.id;
-            const isStep5PRUpload = req.category === 'WO Existing' && stepIndex === 4;
-            const isStep8POUpload = req.category === 'WO Existing' && stepIndex === 7;
-            const isStep6UserPR = req.category === 'WO Existing' && stepIndex === 5;
+            
             const latestHistory = req.revisionHistory && req.revisionHistory.length > 0 ? req.revisionHistory[req.revisionHistory.length - 1] : null;
             const hasRecentRequesterResponse = latestHistory && latestHistory.resolvedAt;
-            const upload = uploads[req.id];
-            const isDraggingCard = dragActiveId === req.id;
 
             return (
               <div key={req.id} className="bg-white rounded-xl border border-neutral-200 p-5 sm:p-6 hover:border-neutral-300 transition-all shadow-sm">
@@ -204,7 +162,7 @@ export const ApprovalView: React.FC = () => {
                       <FileText className="w-4 h-4 text-neutral-400 shrink-0"/>
                       <div>
                         <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">
-                          {req.category === 'Design' ? 'Design Drawing' : 'WO Existing'}
+                          {req.category === 'Design' ? 'Design Drawing' : 'In General'}
                         </div>
                         <div className="text-sm font-medium text-neutral-900">{req.pdfFileName}</div>
                       </div>
@@ -214,115 +172,26 @@ export const ApprovalView: React.FC = () => {
                       <button onClick={() => setFullScreenPreviewRequest(req)} className="px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 rounded-md">Tinjau</button>
                     </div>
                   </div>
-
-                  {req.prPdfFileName && req.prPdfDataUrl && (
-                    <div className="flex items-center justify-between p-3 bg-neutral-50 border border-neutral-200 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <FileText className="w-4 h-4 text-neutral-400 shrink-0"/>
-                        <div>
-                          <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">Purchase Request</div>
-                          <div className="text-sm font-medium text-neutral-900">{req.prPdfFileName}</div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <a href={req.prPdfDataUrl} download={req.prPdfFileName} className="px-3 py-1.5 text-xs font-medium text-neutral-600 hover:text-neutral-900 bg-white border border-neutral-200 rounded-md">Unduh</a>
-                        <button onClick={() => setFullScreenPreviewRequest(req)} className="px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 rounded-md">Tinjau</button>
-                      </div>
-                    </div>
-                  )}
-
-                  {req.poPdfFileName && req.poPdfDataUrl && (
-                    <div className="flex items-center justify-between p-3 bg-neutral-50 border border-neutral-200 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <FileText className="w-4 h-4 text-neutral-400 shrink-0"/>
-                        <div>
-                          <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">Purchase Order</div>
-                          <div className="text-sm font-medium text-neutral-900">{req.poPdfFileName}</div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <a href={req.poPdfDataUrl} download={req.poPdfFileName} className="px-3 py-1.5 text-xs font-medium text-neutral-600 hover:text-neutral-900 bg-white border border-neutral-200 rounded-md">Unduh</a>
-                        <button onClick={() => setFullScreenPreviewRequest(req)} className="px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 rounded-md">Tinjau</button>
-                      </div>
-                    </div>
-                  )}
                 </div>
 
-                {isStep5PRUpload || isStep8POUpload ? (
-                  <div className="pt-2">
-                    <h4 className="text-xs font-bold text-neutral-900 mb-2 uppercase tracking-wide">
-                      {isStep5PRUpload ? 'Lampirkan Purchase Request (PR)' : 'Lampirkan Purchase Order (PO)'}
-                    </h4>
-                    <input
-                      type="file"
-                      accept=".pdf"
-                      id={`file-upload-${req.id}`}
-                      className="hidden"
-                      onChange={(e) => {
-                        if (e.target.files?.[0]) processFileUpload(req.id, e.target.files[0]);
-                        e.target.value = '';
-                      }}
-                    />
-                    {!upload?.url ? (
-                      <label
-                        htmlFor={`file-upload-${req.id}`}
-                        onDragOver={(e) => { e.preventDefault(); setDragActiveId(req.id); }}
-                        onDragLeave={(e) => { e.preventDefault(); setDragActiveId(null); }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          setDragActiveId(null);
-                          if(e.dataTransfer.files?.[0]) processFileUpload(req.id, e.dataTransfer.files[0]);
-                        }}
-                        className={`w-full py-10 border border-dashed rounded-lg flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors ${isDraggingCard ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-300 bg-white hover:bg-neutral-50'}`}
-                      >
-                        <Upload className="w-5 h-5 text-neutral-400"/>
-                        <div className="text-xs text-neutral-600">
-                          <span className="font-semibold text-neutral-900">Klik untuk unggah</span> atau seret file PDF ke sini
-                        </div>
-                      </label>
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <button onClick={() => setFullScreenPreviewRequest(req)} className="py-2.5 bg-white border border-neutral-300 hover:bg-neutral-50 text-neutral-900 text-xs font-medium rounded-lg transition-colors">
+                    Tinjau Dokumen
+                  </button>
+                  <button onClick={() => handleOneClickSign(req)} disabled={isSigning || !currentUser.signatureBase64} className="py-2.5 bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm">
+                    {isSigning ? (
+                      <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /><span>Memproses...</span></>
                     ) : (
-                      <div className="flex items-center justify-between p-3 bg-white border border-neutral-200 rounded-lg">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <FileText className="w-4 h-4 text-neutral-400 shrink-0"/>
-                          <span className="text-xs font-medium text-neutral-900 truncate">{upload.name}</span>
-                        </div>
-                        <button
-                          onClick={() => setUploads(prev => { const next = {...prev}; delete next[req.id]; return next; })}
-                          className="text-rose-600 hover:text-rose-700 text-xs font-medium shrink-0 p-1"
-                        >
-                          <X className="w-4 h-4"/>
-                        </button>
-                      </div>
+                      <><CheckCircle className="w-4 h-4" /><span>Setujui & Tanda Tangani</span></>
                     )}
-                    <button
-                      onClick={() => isStep5PRUpload ? executeUploadPR(req.id) : executeUploadPO(req.id)}
-                      disabled={!upload?.url}
-                      className="mt-3 w-full py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-medium disabled:opacity-50 transition-colors flex items-center justify-center gap-2 shadow-sm"
-                    >
-                      {isStep5PRUpload ? 'Kirim ke User' : 'Sahkan PO'} <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                    <button onClick={() => setFullScreenPreviewRequest(req)} className="py-2.5 bg-white border border-neutral-300 hover:bg-neutral-50 text-neutral-900 text-xs font-medium rounded-lg transition-colors">
-                      Tinjau Dokumen
-                    </button>
-                    <button onClick={() => handleOneClickSign(req)} disabled={isSigning || !currentUser.signatureBase64} className="py-2.5 bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm">
-                      {isSigning ? (
-                        <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /><span>Memproses...</span></>
-                      ) : (
-                        <><CheckCircle className="w-4 h-4" /><span>Setujui & Tanda Tangani</span></>
-                      )}
-                    </button>
-                  </div>
-                )}
-                {!isStep5PRUpload && !isStep8POUpload && (
-                  <div className="mt-4 pt-4 border-t border-neutral-100 text-right">
-                    <button onClick={() => setRejectingReq(req)} className="text-xs font-medium text-rose-600 hover:text-rose-700">
-                      {isStep6UserPR ? 'Kembalikan PR ke Purchasing' : 'Tolak Dokumen'}
-                    </button>
-                  </div>
-                )}
+                  </button>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-neutral-100 text-right">
+                  <button onClick={() => setRejectingReq(req)} className="text-xs font-medium text-rose-600 hover:text-rose-700">
+                    Tolak Dokumen
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -333,9 +202,7 @@ export const ApprovalView: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-sm w-full p-6 shadow-xl animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between mb-4 pb-3 border-b border-neutral-100">
-              <h3 className="text-sm font-bold text-neutral-900">
-                {rejectingReq.category === 'WO Existing' && rejectingReq.currentStepIndex === 5 ? 'Kembalikan PR' : 'Tolak Dokumen'}
-              </h3>
+              <h3 className="text-sm font-bold text-neutral-900">Tolak Dokumen</h3>
               <button onClick={() => setRejectingReq(null)} className="text-neutral-400 hover:text-neutral-800"><X className="w-4 h-4" /></button>
             </div>
             <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Tulis alasan..." rows={3} className="w-full p-3 text-sm bg-neutral-50 border border-neutral-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-neutral-900 mb-4 transition-colors" />
@@ -347,7 +214,6 @@ export const ApprovalView: React.FC = () => {
         </div>
       )}
 
-      {/* PERBAIKAN: Menempatkan komponen modal di struktur paling bawah */}
       <SignatureModal isOpen={showSignatureModal} onClose={() => setShowSignatureModal(false)} />
     </div>
   );

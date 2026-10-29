@@ -1,234 +1,303 @@
-import { PDFDocument, rgb, StandardFonts, PDFPage, PDFImage, PDFFont, PDFName } from 'pdf-lib';
-import * as pdfjsLib from 'pdfjs-dist';
-import { ApproverStep, DetectedSlot } from '../types';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { UserProfile, ApprovalRequest, ApproverStep, TabType, PageReviewItem, RevisionHistoryItem, AuditNote } from '../types';
+import { executeOneClickAutoSign } from '../services/pdfAutoSigner';
+import usersData from '../data/users.json';
 
-try {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-} catch (e) {
-  console.warn('pdfjs worker initialization note:', e);
+interface AppContextType {
+  activeTab: TabType; setActiveTab: (tab: TabType) => void;
+  users: UserProfile[]; currentUser: UserProfile; setCurrentUser: (user: UserProfile) => void;
+  isLoggedIn: boolean; login: (u: string, p: string) => { success: boolean; message?: string }; logout: () => void;
+  requests: ApprovalRequest[]; saveSignature: (userId: string, sig: string) => void;
+  createNewRequest: (t: string, fn: string, fd: string, a: any[], tp: number, c: 'Design' | 'WO Existing', sp: number[], forceNewPage?: boolean) => Promise<string>;
+  performAutoSignApproval: (requestId: string) => Promise<{ success: boolean; message: string }>;
+  requestRevision: (requestId: string, pageReviews: PageReviewItem[], generalNote?: string) => void;
+  rejectRequest: (requestId: string, reason: string) => void;
+  addAuditNote: (id: string, p: number, c: string, s?: 'approved' | 'needs_revision' | 'info') => void;
+  submitRevisionByRequester: (id: string, note: string, fileUrl?: string, fileName?: string) => Promise<void>;
+  notification: { message: string; type: 'success' | 'info' | 'error' } | null; showToast: (m: string, t?: 'success' | 'info' | 'error') => void;
+  selectedRequestForDetail: ApprovalRequest | null; setSelectedRequestForDetail: (req: ApprovalRequest | null) => void;
+  fullScreenPreviewRequest: ApprovalRequest | null; setFullScreenPreviewRequest: (req: ApprovalRequest | null) => void;
+  
+  // Fungsi lama dipertahankan sebagai cangkang kosong sementara agar ApprovalView tidak error sebelum direvisi
+  uploadPRAndForward: (requestId: string, fileName: string, dataUrl: string) => Promise<void>;
+  uploadPOAndComplete: (requestId: string, fileName: string, dataUrl: string) => Promise<void>;
+  rejectPRToMega: (requestId: string, reason: string) => void;
 }
 
-export interface AutoSignResult {
-  success: boolean;
-  signedPdfUrl: string;
-  signedAt: string;
-  detectedPage: number;
-  signedPages: number[];
-  totalSlotsSigned: number;
-  coordinates: { x: number; y: number; width: number; height: number };
-  detectionMethod: 'box_fitted_contain' | 'layout_slot_matched' | 'dynamic_margin_shift';
-  auditStamp: string;
-  error?: string;
-}
+const AppContext = createContext<AppContextType | undefined>(undefined);
+const API_BASE = 'https://kintouncoffee.id/ams/api';
 
-function drawDigitalStamp(
-  page: PDFPage, signatureImage: PDFImage, approver: ApproverStep, requestId: string, 
-  x: number, y: number, fontRegular: PDFFont, fontBold: PDFFont, category: 'Design' | 'WO Existing'
-) {
-  if (category === 'Design') {
-    const DESIGN_STAMP_W = 55; const DESIGN_STAMP_H = 45;
-    const sigDims = signatureImage.scale(1.0);
-    const aspect = sigDims.width / Math.max(1, sigDims.height);
-    const maxSigW = DESIGN_STAMP_W - 10; const maxSigH = DESIGN_STAMP_H - 18;
-    let sigW = maxSigW; let sigH = sigW / aspect;
-    if (sigH > maxSigH) { sigH = maxSigH; sigW = sigH * aspect; }
-    const signatureYOffset = 6;
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [activeTab, setActiveTab] = useState<TabType>('approval');
+  const [users, setUsers] = useState<UserProfile[]>(usersData as UserProfile[]);
+  
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => localStorage.getItem('ams_is_logged_in') === 'true');
+  const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
+    const savedId = localStorage.getItem('ams_logged_in_user_id');
+    return (usersData as UserProfile[]).find(u => u.id === savedId) || (usersData as UserProfile[])[0];
+  });
+  
+  const [requests, setRequests] = useState<ApprovalRequest[]>([]);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [selectedRequestForDetail, setSelectedRequestForDetail] = useState<ApprovalRequest | null>(null);
+  const [fullScreenPreviewRequest, setFullScreenPreviewRequest] = useState<ApprovalRequest | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(prev => (prev?.message === message ? null : prev)), 4000);
+  };
+
+  // 1. Tarik Data Awal dengan API Baru
+  useEffect(() => {
+    fetch(`${API_BASE}/requests_api.php`).then(res => res.json()).then(res => { 
+      if (res.success && res.data) setRequests(res.data); 
+    }).catch(err => console.warn('Gagal memuat dokumen:', err));
     
-    page.drawImage(signatureImage, { 
-      x: x + (DESIGN_STAMP_W - sigW) / 2, 
-      y: y + DESIGN_STAMP_H - sigH - 2 + signatureYOffset, 
-      width: sigW, height: sigH 
+    fetch(`${API_BASE}/sync_users.php`).then(res => res.json()).then(res => { 
+      if (res.success && res.data && res.data.length > 0) {
+        setUsers(res.data); 
+      } else {
+        // Jika tabel kosong, lakukan seed data awal dari JSON
+        fetch(`${API_BASE}/sync_users.php`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(usersData)
+        });
+      }
+    }).catch(err => console.warn('Gagal memuat user:', err));
+  }, []);
+
+  useEffect(() => {
+    const updatedCurrentUser = users.find(u => u.id === currentUser.id);
+    if (updatedCurrentUser && updatedCurrentUser.signatureBase64 !== currentUser.signatureBase64) {
+      setCurrentUser(updatedCurrentUser);
+    }
+    localStorage.setItem('ams_is_logged_in', isLoggedIn ? 'true' : 'false');
+    if (currentUser?.id) localStorage.setItem('ams_logged_in_user_id', currentUser.id);
+  }, [users, currentUser, isLoggedIn]);
+
+  // Helper untuk menyimpan ke Relational Database + Audit Trail
+  const saveRequestToDb = async (action: 'create' | 'update', reqData: ApprovalRequest, logData?: any) => {
+    try {
+      await fetch(`${API_BASE}/requests_api.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, request_data: reqData, log_data: logData })
+      });
+    } catch (e) { console.error('Gagal menyimpan ke database:', e); }
+  };
+
+  const login = (u: string, p: string) => {
+    if (!u || !p) return { success: false, message: 'Wajib diisi.' };
+    const target = users.find(x => x.name.toLowerCase() === u.toLowerCase() || x.id.toLowerCase() === u.toLowerCase());
+    if (!target) return { success: false, message: 'Akun tidak ditemukan.' };
+    setCurrentUser(target); setIsLoggedIn(true); setActiveTab('approval');
+    showToast(`Berhasil masuk sebagai ${target.name}`, 'success'); return { success: true };
+  };
+  
+  const logout = () => { setIsLoggedIn(false); localStorage.removeItem('ams_is_logged_in'); };
+  
+  const saveSignature = async (userId: string, sig: string) => {
+    setUsers(prev => prev.map(u => (u.id === userId ? { ...u, signatureBase64: sig } : u)));
+    if (currentUser.id === userId) setCurrentUser(prev => ({ ...prev, signatureBase64: sig }));
+    
+    await fetch(`${API_BASE}/sync_users.php`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_signature', userId, signatureBase64: sig })
     });
+    showToast('Tanda tangan tersimpan permanen di server!', 'success');
+  };
+
+  const uploadToHostinger = async (base64Data: string, fileName: string, categoryStr: string): Promise<string> => {
+    if (base64Data.startsWith('http')) return base64Data;
+    try {
+      const response = await fetch(`${API_BASE}/upload.php`, { 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ pdfDataUrl: base64Data, fileName, category: categoryStr }) 
+      });
+      const data = await response.json();
+      if (data.success) return data.fileUrl;
+      return base64Data;
+    } catch (e) { return base64Data; }
+  };
+
+  const blobToBase64 = async (blobUrl: string): Promise<string> => {
+    if (!blobUrl.startsWith('blob:')) return blobUrl;
+    const res = await fetch(blobUrl);
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  const createNewRequest = async (t: string, fn: string, fd: string, a: any[], tp: number, c: 'Design' | 'WO Existing', sp: number[], forceNewPage: boolean = false) => {
+    const requestId = `REQ-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const steps: ApproverStep[] = a.map((appr, idx) => ({ id: `step_${requestId}_${idx}`, order: idx, userId: appr.userId, userName: appr.userName, roleTitle: appr.roleTitle, status: idx === 0 ? 'waiting' : 'pending' }));
+    const safeFileName = `${requestId}_${fn.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     
-    const firstName = approver.userName.trim().split(/\s+/)[0].toUpperCase();
-    const roleWords = approver.roleTitle.trim().split(/\s+/);
-    const roleAcronym = roleWords.length > 1 
-      ? roleWords.map(w => w[0]?.toUpperCase()).join('') 
-      : approver.roleTitle.substring(0, 10).toUpperCase();
+    const livePdfUrl = await uploadToHostinger(fd, safeFileName, c);
+    
+    const newReq: any = { 
+      id: requestId, title: t, category: c, requesterId: currentUser.id, requesterName: currentUser.name, requesterRole: currentUser.role, 
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), status: 'in_progress', 
+      pdfFileName: safeFileName, pdfDataUrl: livePdfUrl, originalPdfDataUrl: livePdfUrl, selectedPages: sp, flow: steps, 
+      currentStepIndex: 0, totalPages: tp, pageReviews: [], auditNotes: [], revisionHistory: [], forceNewPage
+    };
+    
+    setRequests(prev => [newReq as ApprovalRequest, ...prev]); 
+    await saveRequestToDb('create', newReq, { actor_name: currentUser.name, action: 'Submit', note: `Dokumen diajukan ke kategori ${c === 'Design' ? 'Design' : 'In General'}` });
+    
+    showToast('Pengajuan berhasil dikirim.', 'success'); 
+    return requestId;
+  };
+
+  const performAutoSignApproval = async (requestId: string): Promise<{ success: boolean; message: string }> => {
+    const req = requests.find(r => r.id === requestId);
+    if (!req || req.flow[req.currentStepIndex].userId !== currentUser.id) return { success: false, message: 'Akses ditolak.' };
+    const sig = currentUser.signatureBase64;
+    if (!sig) return { success: false, message: 'Tanda tangan tidak ditemukan.' };
+    
+    try {
+      const idx = req.currentStepIndex;
+      const isForceNewPage = (req as any).forceNewPage || false;
       
-    const nameSize = 7; const roleSize = 6;
-    const nameWidth = fontBold.widthOfTextAtSize(firstName, nameSize);
-    const roleWidth = fontRegular.widthOfTextAtSize(roleAcronym, roleSize);
-    
-    page.drawText(firstName, { x: x + (DESIGN_STAMP_W - nameWidth) / 2, y: y + 10, size: nameSize, font: fontBold, color: rgb(0, 0, 0) });
-    page.drawText(roleAcronym, { x: x + (DESIGN_STAMP_W - roleWidth) / 2, y: y + 3, size: roleSize, font: fontRegular, color: rgb(0, 0, 0) });
-    return { width: DESIGN_STAMP_W, height: DESIGN_STAMP_H };
-  } else {
-    const STAMP_W = 130; const STAMP_H = 65;
-    page.drawRectangle({ x, y, width: STAMP_W, height: STAMP_H, color: rgb(1, 1, 1), opacity: 1.0, borderColor: rgb(0.3, 0.3, 0.3), borderOpacity: 1.0, borderWidth: 1 });
-    const sigDims = signatureImage.scale(1.0);
-    const aspect = sigDims.width / Math.max(1, sigDims.height);
-    const maxSigW = STAMP_W - 10; const maxSigH = 30;
-    let sigW = maxSigW; let sigH = sigW / aspect;
-    if (sigH > maxSigH) { sigH = maxSigH; sigW = sigH * aspect; }
-    
-    page.drawImage(signatureImage, { x: x + (STAMP_W - sigW) / 2, y: y + STAMP_H - sigH - 4, width: sigW, height: sigH });
-    page.drawText(approver.userName, { x: x + 6, y: y + 24, size: 8, font: fontBold, color: rgb(0, 0, 0) });
-    
-    const shortRole = approver.roleTitle.length > 25 ? approver.roleTitle.substring(0, 23) + '...' : approver.roleTitle;
-    page.drawText(shortRole, { x: x + 6, y: y + 14, size: 6, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
-    
-    const dateStr = new Date().toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    page.drawText(`Disetujui: ${dateStr}`, { x: x + 6, y: y + 5, size: 5, font: fontRegular, color: rgb(0.4, 0.4, 0.4) });
-    page.drawText(requestId, { x: x + STAMP_W - 40, y: y + 5, size: 4, font: fontRegular, color: rgb(0.6, 0.6, 0.6) });
-    return { width: STAMP_W, height: STAMP_H };
-  }
-}
+      // Kategori WO Existing (In General) kini tidak lagi menggunakan logika PR/PO. Murni menembak PDF utama.
+      const res = await executeOneClickAutoSign(req.pdfDataUrl, sig, req.flow[idx], req.flow, req.category, req.selectedPages, req.id, 'WO', isForceNewPage);
+      if (!res.success) return { success: false, message: res.error || 'Gagal.' };
 
-export async function executeOneClickAutoSign(
-  pdfSource: string | ArrayBuffer, signaturePngDataUrl: string, currentApprover: ApproverStep, allSteps: ApproverStep[],
-  category: 'Design' | 'WO Existing' = 'Design', selectedPages: number[] = [], requestId: string = 'REQ-0000',
-  docType: 'WO' | 'PR' | 'PO' = 'WO', forceNewPage: boolean = false, customYOffset?: number
-): Promise<AutoSignResult> {
-  try {
-    let pdfBytes: Uint8Array;
-    if (typeof pdfSource === 'string') {
-      if (pdfSource.startsWith('data:')) {
-        const base64Data = pdfSource.split(',')[1];
-        const binaryString = atob(base64Data);
-        pdfBytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) pdfBytes[i] = binaryString.charCodeAt(i);
-      } else {
-        const cacheBusterUrl = pdfSource.includes('?') ? `${pdfSource}&t=${Date.now()}` : `${pdfSource}?t=${Date.now()}`;
-        const response = await fetch(cacheBusterUrl);
-        pdfBytes = new Uint8Array(await response.arrayBuffer());
-      }
-    } else { pdfBytes = new Uint8Array(pdfSource); }
+      const base64Signed = await blobToBase64(res.signedPdfUrl);
+      const liveSignedUrl = await uploadToHostinger(base64Signed, req.pdfFileName, req.category);
+
+      const nextStepIndex = idx + 1;
+      const isCompleted = nextStepIndex >= req.flow.length;
+      const updatedFlow = req.flow.map((step, i) => {
+        if (i === idx) return { ...step, status: 'approved' as const, signedAt: new Date().toISOString(), signatureUrl: sig };
+        if (i === nextStepIndex) return { ...step, status: 'waiting' as const };
+        return step;
+      });
+
+      const updatedReq = { 
+        ...req, flow: updatedFlow, currentStepIndex: nextStepIndex, 
+        status: isCompleted ? 'completed' : 'in_progress', updatedAt: new Date().toISOString(),
+        pdfDataUrl: liveSignedUrl 
+      };
+
+      setRequests(prev => prev.map(r => r.id === requestId ? updatedReq as ApprovalRequest : r));
+      await saveRequestToDb('update', updatedReq as ApprovalRequest, { actor_name: currentUser.name, action: 'Approve', note: `Tahap ${idx + 1} disetujui` });
+      
+      return { success: true, message: isCompleted ? 'Selesai.' : 'Diteruskan.' };
+    } catch (err: any) { return { success: false, message: err?.message }; }
+  };
+
+  const requestRevision = async (requestId: string, pageReviews: PageReviewItem[], generalNote?: string) => {
+    const req = requests.find(r => r.id === requestId);
+    if (!req) return;
+
+    const updatedFlow = [...req.flow];
+    updatedFlow[req.currentStepIndex].status = 'needs_revision';
     
-    let prPoAnchors = { dimintaOleh: null as any, disetujuiOleh: null as any, bagianPembelian: null as any };
-    if (category === 'WO Existing' && (docType === 'PR' || docType === 'PO')) {
-      try {
-        const loadingTask = pdfjsLib.getDocument({ data: pdfBytes.slice() });
-        const docJs = await loadingTask.promise;
-        const lastPageNum = docJs.numPages;
-        const pageJs = await docJs.getPage(lastPageNum);
-        const textContent = await pageJs.getTextContent();
-        textContent.items.forEach((item: any) => {
-          if (item.str) {
-            const str = item.str.toLowerCase().replace(/[^a-z]/g, '');
-            const tx = item.transform[4];
-            const ty = item.transform[5];
-            if (str.includes('dimintaoleh')) prPoAnchors.dimintaOleh = { x: tx, y: ty };
-            if (str.includes('disetujuioleh')) prPoAnchors.disetujuiOleh = { x: tx, y: ty };
-            if (str.includes('bagianpembelian')) prPoAnchors.bagianPembelian = { x: tx, y: ty };
-          }
-        });
-      } catch (err) {
-        console.warn('Gagal memindai teks jangkar PR/PO:', err);
-      }
+    const newHistoryItem: RevisionHistoryItem = {
+      id: `rev_${Date.now()}`, createdAt: new Date().toISOString(),
+      requestedByUserId: currentUser.id, requestedByUserName: currentUser.name, requestedByUserRole: currentUser.role,
+      pageReviews: pageReviews || [], generalNote: generalNote || 'Revisi diperlukan'
+    };
+
+    const updatedReq = {
+      ...req, status: 'needs_revision', notes: generalNote || 'Perbaikan diminta oleh ' + currentUser.name,
+      lastRevisionRequestedBy: currentUser.name, flow: updatedFlow,
+      revisionHistory: [...(req.revisionHistory || []), newHistoryItem]
+    };
+
+    setRequests(prev => prev.map(r => r.id === requestId ? updatedReq as ApprovalRequest : r));
+    await saveRequestToDb('update', updatedReq as ApprovalRequest, { actor_name: currentUser.name, action: 'Needs Revision', note: generalNote || 'Dokumen butuh revisi' });
+    
+    showToast('Dokumen dikembalikan ke pengaju untuk direvisi.', 'info');
+  };
+
+  const rejectRequest = async (requestId: string, reason: string) => {
+    const req = requests.find(r => r.id === requestId);
+    if (!req) return;
+    const updatedFlow = [...req.flow];
+    updatedFlow[req.currentStepIndex].status = 'rejected';
+    const updatedReq = { ...req, status: 'rejected', notes: reason, flow: updatedFlow };
+    
+    setRequests(prev => prev.map(r => r.id === requestId ? updatedReq as ApprovalRequest : r));
+    await saveRequestToDb('update', updatedReq as ApprovalRequest, { actor_name: currentUser.name, action: 'Rejected', note: reason });
+    showToast('Dokumen ditolak.', 'error');
+  };
+
+  const addAuditNote = async (id: string, pageNumber: number, content: string, status: 'approved' | 'needs_revision' | 'info' = 'info') => {
+    const req = requests.find(r => r.id === id);
+    if (!req) return;
+    const newNote: AuditNote = {
+      id: `note_${Date.now()}`, pageNumber, authorId: currentUser.id, authorName: currentUser.name,
+      authorRole: currentUser.role, content, status, createdAt: new Date().toISOString()
+    };
+    const updatedReq = { ...req, auditNotes: [...(req.auditNotes || []), newNote] };
+    
+    setRequests(prev => prev.map(r => r.id === id ? updatedReq as ApprovalRequest : r));
+    await saveRequestToDb('update', updatedReq as ApprovalRequest, { actor_name: currentUser.name, action: 'Add Note', note: `Halaman ${pageNumber}: ${content}` });
+  };
+
+  const submitRevisionByRequester = async (requestId: string, note: string, newPdfDataUrl?: string, newPdfFileName?: string) => {
+    const reqToUpdate = requests.find(r => r.id === requestId);
+    if (!reqToUpdate) return;
+    
+    let finalUrl = newPdfDataUrl;
+    let finalFileName = reqToUpdate.pdfFileName;
+    const updatedHistory = [...(reqToUpdate.revisionHistory || [])];
+    const revCount = updatedHistory.length;
+
+    if (newPdfDataUrl && newPdfDataUrl.startsWith('data:')) {
+      const baseName = reqToUpdate.pdfFileName.replace(/\.pdf$/i, '').replace(/_Rev\d+$/, '');
+      finalFileName = `${baseName}_Rev${revCount || 1}.pdf`;
+      finalUrl = await uploadToHostinger(newPdfDataUrl, finalFileName, reqToUpdate.category);
     }
-    
-    const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
-    const pages = pdfDoc.getPages();
-    
-    // Blok page.node.set(PDFName.of('Contents')) telah dihapus di sini untuk mencegah bug halaman putih.
 
-    const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    let lastPageIndex = pages.length - 1;
-    
-    let signatureBytes: Uint8Array;
-    if (signaturePngDataUrl.startsWith('data:image/')) {
-      const base64Png = signaturePngDataUrl.split(',')[1];
-      const binaryPng = atob(base64Png);
-      signatureBytes = new Uint8Array(binaryPng.length);
-      for (let i = 0; i < binaryPng.length; i++) signatureBytes[i] = binaryPng.charCodeAt(i);
-    } else throw new Error('Format tanda tangan harus berupa Data URL PNG transparan.');
-    const embeddedSignature = await pdfDoc.embedPng(signatureBytes);
-    const signedPagesList: number[] = [];
-    let lastFittedCoords = { x: 0, y: 0, width: 0, height: 0 };
-    let totalSigned = 0;
-    
-    if (category === 'WO Existing') {
-      const STAMP_W = 130; const GAP = 10; const marginRight = 40;
-      let pagesToSign: number[] = [];
-      if (docType === 'PR' || docType === 'PO') { pagesToSign = [pages.length]; }
-       else { pagesToSign = selectedPages.length > 0 ? selectedPages : pages.map((_, i) => i + 1); }
-      let virtualTotalApprovers = 4;
-      let virtualIndex = 0;
-      const realIndex = allSteps.findIndex(s => s.id === currentApprover.id);
-      if (docType === 'WO') { virtualTotalApprovers = 4; virtualIndex = realIndex; }
-       else if (docType === 'PR') { virtualTotalApprovers = 2; virtualIndex = realIndex - 5; }
-       else if (docType === 'PO') { virtualTotalApprovers = 1; virtualIndex = 0; }
-      const totalBlockWidth = (virtualTotalApprovers * STAMP_W) + ((virtualTotalApprovers - 1) * GAP);
-      for (const pageNum of pagesToSign) {
-        if (pageNum < 1 || pageNum > pages.length) continue;
-        let targetPage = pages[pageNum - 1];
-        let y = customYOffset !== undefined ? customYOffset : 180;
-        const { width: pageWidth } = targetPage.getSize();
-        const startX = pageWidth - marginRight - totalBlockWidth;
-        let x = startX + (virtualIndex * (STAMP_W + GAP));
-        if (forceNewPage) {
-          const { width, height } = targetPage.getSize();
-          targetPage = pdfDoc.addPage([width, height]);
-          y = height - 100; x = width - marginRight - STAMP_W;
-          if (pageNum === pages.length) lastPageIndex = pdfDoc.getPages().length - 1;
-        } else {
-          if (docType === 'PR') {
-            if (virtualIndex === 0 && prPoAnchors.dimintaOleh) { x = prPoAnchors.dimintaOleh.x - 30; y = prPoAnchors.dimintaOleh.y - 75; }
-             else if (virtualIndex === 1 && prPoAnchors.disetujuiOleh) { x = prPoAnchors.disetujuiOleh.x - 30; y = prPoAnchors.disetujuiOleh.y - 75; }
-          } else if (docType === 'PO') {
-            if (virtualIndex === 0 && prPoAnchors.bagianPembelian) { x = prPoAnchors.bagianPembelian.x - 30; y = prPoAnchors.bagianPembelian.y - 75; }
-          }
-        }
-        const dims = drawDigitalStamp(targetPage, embeddedSignature, currentApprover, requestId, x, y, fontRegular, fontBold, category);
-        if (!signedPagesList.includes(pageNum)) signedPagesList.push(pageNum);
-        lastFittedCoords = { x, y, width: dims.width, height: dims.height };
-        totalSigned++;
-      }
+    let updatedFlow = [...reqToUpdate.flow];
+    let newStepIndex = reqToUpdate.currentStepIndex;
+
+    if (newPdfDataUrl) {
+      updatedFlow = updatedFlow.map((step, idx) => ({
+        ...step, status: idx === 0 ? 'waiting' : 'pending', signedAt: undefined, signatureUrl: undefined
+      }));
+      newStepIndex = 0;
     } else {
-      const DESIGN_STAMP_W = 55; const DESIGN_STAMP_H = 45; const GAP = -18;
-      const rightMargin = 28; const bottomMargin = 75;
-      const rawTargetSlots: DetectedSlot[] = [];
-      if (currentApprover.detectedSlots && currentApprover.detectedSlots.length > 0) {
-        rawTargetSlots.push(...currentApprover.detectedSlots);
-      } else if (currentApprover.detectedSlot) {
-        rawTargetSlots.push(currentApprover.detectedSlot);
-      } else {
-        const approverIndex = allSteps.findIndex(s => s.id === currentApprover.id);
-        const safeIndex = Math.min(Math.max(0, approverIndex), 1);
-        const pagesToStamp = selectedPages.length > 0 ? selectedPages : [lastPageIndex + 1];
-        pagesToStamp.forEach(pageNum => {
-          const targetPage = pages[pageNum - 1];
-          const { width: pageWidth } = targetPage.getSize();
-          const startX = pageWidth - rightMargin - (2 * DESIGN_STAMP_W);
-          const boxX = startX + (safeIndex * (DESIGN_STAMP_W + GAP));
-          const boxY = bottomMargin;
-          rawTargetSlots.push({
-            pageIndex: pageNum - 1, pageNumber: pageNum, slotType: 'authorization_box',
-            isFooter: true, hasExplicitBox: false, slotLabel: `Posisi Default Design`,
-            x: boxX, y: boxY, width: DESIGN_STAMP_W, height: DESIGN_STAMP_H,
-            name: currentApprover.userName, role: currentApprover.roleTitle, confidence: 'layout_matrix',
-          });
-        });
-      }
-      for (const slot of rawTargetSlots) {
-        const pageIndex = Math.min(Math.max(0, slot.pageIndex || 0), pages.length - 1);
-        const targetPage = pages[pageIndex];
-        const safeX = typeof slot.x === 'number' ? slot.x : 40;
-        const safeY = typeof slot.y === 'number' ? slot.y : 40;
-        const dims = drawDigitalStamp(targetPage, embeddedSignature, currentApprover, requestId, safeX, safeY, fontRegular, fontBold, category);
-        const pNum = pageIndex + 1;
-        if (!signedPagesList.includes(pNum)) signedPagesList.push(pNum);
-        lastFittedCoords = { x: safeX, y: safeY, width: dims.width, height: dims.height };
-        totalSigned++;
-      }
+      updatedFlow[reqToUpdate.currentStepIndex].status = 'waiting';
     }
-    
-    signedPagesList.sort((a, b) => a - b);
-    const modifiedBytes = await pdfDoc.save();
-    const blob = new Blob([modifiedBytes as unknown as BlobPart], { type: 'application/pdf' });
-    const signedPdfUrl = URL.createObjectURL(blob);
-    
-    return {
-      success: true, signedPdfUrl, signedAt: new Date().toISOString(), detectedPage: signedPagesList[0] || (lastPageIndex + 1), signedPages: signedPagesList,
-      totalSlotsSigned: totalSigned, coordinates: lastFittedCoords, detectionMethod: 'dynamic_margin_shift', auditStamp: 'Stamp Card Digital'
+
+    if (updatedHistory.length > 0) {
+      updatedHistory[updatedHistory.length - 1].resolvedAt = new Date().toISOString();
+      updatedHistory[updatedHistory.length - 1].resolvedByRequesterName = currentUser.name;
+      updatedHistory[updatedHistory.length - 1].requesterResponseNote = note;
+    }
+
+    const finalReq = {
+      ...reqToUpdate, status: 'in_progress', pdfDataUrl: finalUrl || reqToUpdate.pdfDataUrl,
+      pdfFileName: finalFileName, flow: updatedFlow, currentStepIndex: newStepIndex,
+      revisionHistory: updatedHistory, notes: ''
     };
-  } catch (error: any) {
-    return { 
-      success: false, signedPdfUrl: '', signedAt: '', detectedPage: 1, signedPages: [], 
-      totalSlotsSigned: 0, coordinates: { x: 0, y: 0, width: 0, height: 0 }, 
-      detectionMethod: 'layout_slot_matched', auditStamp: '', error: error?.message || 'Gagal menandatangani.' 
-    };
-  }
-}
+
+    setRequests(prev => prev.map(r => r.id === requestId ? finalReq as ApprovalRequest : r));
+    await saveRequestToDb('update', finalReq as ApprovalRequest, { actor_name: currentUser.name, action: 'Resubmit', note: newPdfDataUrl ? 'Mengunggah file revisi' : 'Membalas catatan tanpa file baru' });
+    
+    showToast('Revisi berhasil dikirim kembali.', 'success');
+  };
+
+  // Dummy fungsi usang untuk mencegah layar ApprovalView crash sebelum direvisi
+  const uploadPRAndForward = async () => {};
+  const uploadPOAndComplete = async () => {};
+  const rejectPRToMega = () => {};
+
+  return (
+    <AppContext.Provider value={{ activeTab, setActiveTab, users, currentUser, setCurrentUser, isLoggedIn, login, logout, requests, saveSignature, createNewRequest, performAutoSignApproval, uploadPRAndForward, uploadPOAndComplete, rejectPRToMega, requestRevision, rejectRequest, notification, showToast, selectedRequestForDetail, setSelectedRequestForDetail, fullScreenPreviewRequest, setFullScreenPreviewRequest, addAuditNote, submitRevisionByRequester }}>
+      {children}
+    </AppContext.Provider>
+  );
+};
+
+export const useApp = () => {
+  const context = useContext(AppContext);
+  if (!context) throw new Error('useApp must be used within AppProvider');
+  return context;
+};
