@@ -59,7 +59,7 @@ export const ApprovalView: React.FC = () => {
     <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-neutral-900">Antrean Persetujuan</h1>
-        <p className="text-neutral-500 mt-1">
+        <p className="text-sm text-neutral-500 mt-1">
           Dokumen yang membutuhkan tinjauan dan tanda tangan Anda.
         </p>
       </div>

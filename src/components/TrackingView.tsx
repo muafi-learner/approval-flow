@@ -1,19 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ApprovalRequest, ApproverStep } from '../types';
-import { 
-  CheckCircle2, Clock, CircleDashed, XCircle, FileText, 
-  Download, ShieldCheck, X, ExternalLink, 
-  RotateCcw, Maximize2, Upload, CheckCircle 
-} from 'lucide-react';
+import { CheckCircle2, Clock, CircleDashed, XCircle, FileText, Download, ShieldCheck, X, ExternalLink, RotateCcw, Maximize2, Upload, CheckCircle } from 'lucide-react';
 
 export const TrackingView: React.FC = () => {
-  const {
-    requests, selectedRequestForDetail, setSelectedRequestForDetail,
-    submitRevisionByRequester, currentUser, showToast,
-    setActiveTab, setFullScreenPreviewRequest
-  } = useApp();
-
+  const { requests, selectedRequestForDetail, setSelectedRequestForDetail, submitRevisionByRequester, currentUser, showToast, setActiveTab, setFullScreenPreviewRequest } = useApp();
   const [filter, setFilter] = useState<'all' | 'in_progress' | 'needs_revision' | 'completed' | 'rejected'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [submittingRevisionReq, setSubmittingRevisionReq] = useState<ApprovalRequest | null>(null);
@@ -21,7 +12,6 @@ export const TrackingView: React.FC = () => {
   const [newPdfFile, setNewPdfFile] = useState<{ name: string; dataUrl: string } | null>(null);
   const [revisionMode, setRevisionMode] = useState<'wording_only' | 'with_file'>('wording_only');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
   const [detailActiveDocType, setDetailActiveDocType] = useState<'WO' | 'PR' | 'PO'>('WO');
   const [detailBlobUrl, setDetailBlobUrl] = useState('');
 
@@ -114,13 +104,11 @@ export const TrackingView: React.FC = () => {
     if (!rawDetailUrl) return;
     let isCancelled = false;
     let objectUrl = '';
-    
     const loadBlobAsync = async () => {
       try {
-        const fetchUrl = rawDetailUrl.startsWith('data:') 
-          ? rawDetailUrl 
-          : (rawDetailUrl.includes('?') ? `${rawDetailUrl}&t=${Date.now()}` : `${rawDetailUrl}?t=${Date.now()}`);
-          
+        const fetchUrl = rawDetailUrl.startsWith('data:')
+           ? rawDetailUrl
+           : (rawDetailUrl.includes('?') ? `${rawDetailUrl}&t=${Date.now()}` : `${rawDetailUrl}?t=${Date.now()}`);
         const res = await fetch(fetchUrl);
         const blob = await res.blob();
         if (!isCancelled) {
@@ -131,7 +119,6 @@ export const TrackingView: React.FC = () => {
         console.error('Konversi Blob gagal:', err);
       }
     };
-    
     loadBlobAsync();
     return () => {
       isCancelled = true;
@@ -147,15 +134,17 @@ export const TrackingView: React.FC = () => {
   return (
     <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        {/* BLOK JUDUL YANG SUDAH DISERAGAMKAN */}
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900">Status Pengajuan</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-neutral-900">Status Pengajuan</h1>
             <span className="px-2.5 py-0.5 text-[11px] font-medium bg-neutral-100 text-neutral-600 rounded">
               {myRequests.length} Total
             </span>
           </div>
           <p className="mt-1 text-sm text-neutral-500">Lacak dokumen dan progres persetujuan yang Anda ajukan.</p>
         </div>
+        
         <div className="flex items-center gap-1 p-1 bg-neutral-100/80 rounded-lg shrink-0 border border-neutral-200/50">
           <button onClick={() => setFilter('all')} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${filter === 'all' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Semua</button>
           <button onClick={() => setFilter('in_progress')} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${filter === 'in_progress' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Berjalan</button>
@@ -195,7 +184,7 @@ export const TrackingView: React.FC = () => {
             const isCompleted = req.status === 'completed';
             const isNeedsRevision = req.status === 'needs_revision';
             const lastNote = (req.auditNotes || []).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-
+            
             return (
               <div key={req.id} className={`bg-white rounded-xl border p-5 transition-all shadow-sm ${isNeedsRevision ? 'border-neutral-200 border-l-4 border-l-amber-400' : 'border-neutral-200 hover:border-neutral-300'}`}>
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-4 border-b border-neutral-100">
@@ -318,7 +307,7 @@ export const TrackingView: React.FC = () => {
                   </label>
                 </div>
               </div>
-
+              
               {revisionMode === 'with_file' && (
                 <div>
                   <label className="block text-xs font-semibold text-neutral-700 mb-2">File Revisi (PDF)</label>
@@ -431,7 +420,6 @@ export const TrackingView: React.FC = () => {
                       </button>
                     )}
                   </div>
-
                   <div className="flex items-center gap-4">
                     <a href={rawDetailUrl} download={detailActiveDocType === 'PR' ? `PR_${selectedRequestForDetail.prPdfFileName}` : detailActiveDocType === 'PO' ? `PO_${selectedRequestForDetail.poPdfFileName}` : `${selectedRequestForDetail.category === 'Design' ? 'Design' : 'WO'}_${selectedRequestForDetail.pdfFileName}`} className="text-[11px] text-neutral-500 hover:text-neutral-900 flex items-center gap-1.5 font-medium transition-colors">
                       <Download className="w-3.5 h-3.5" /> Unduh File
@@ -445,6 +433,7 @@ export const TrackingView: React.FC = () => {
                     </a>
                   </div>
                 </div>
+                
                 <div className="w-full h-[400px] border border-neutral-200/80 rounded-xl overflow-hidden bg-white shadow-sm">
                   {detailBlobUrl ? (
                     <iframe
@@ -487,6 +476,7 @@ export const TrackingView: React.FC = () => {
                   ))}
                 </div>
               </div>
+
             </div>
           </div>
         </div>

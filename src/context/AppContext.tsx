@@ -7,7 +7,7 @@ import { UploadCloud } from 'lucide-react';
 interface AppContextType {
   activeTab: TabType; setActiveTab: (tab: TabType) => void;
   users: UserProfile[]; currentUser: UserProfile; setCurrentUser: (user: UserProfile) => void;
-  isLoggedIn: boolean; login: (u: string, p: string) => { success: boolean; message?: string }; logout: () => void;
+  isLoggedIn: boolean; login: (u: string, p: string, rememberMe: boolean) => { success: boolean; message?: string }; logout: () => void;
   requests: ApprovalRequest[]; saveSignature: (userId: string, sig: string) => void;
   createNewRequest: (t: string, fn: string, fd: string, a: any[], tp: number, c: 'Design' | 'WO Existing', sp: number[], forceNewPage?: boolean) => Promise<string>;
   performAutoSignApproval: (requestId: string) => Promise<{ success: boolean; message: string }>;
@@ -27,13 +27,16 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const API_BASE = 'https://kintouncoffee.id/ams/api';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Default tab diset ke tracking (Surat Saya) sebagai prioritas terakhir
   const [activeTab, setActiveTab] = useState<TabType>('tracking');
   const [users, setUsers] = useState<UserProfile[]>(usersData as UserProfile[]);
   
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => localStorage.getItem('ams_is_logged_in') === 'true');
+  // Baca sesi dari Local (Remember) atau Session (Tidak Remember)
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem('ams_is_logged_in') === 'true' || sessionStorage.getItem('ams_is_logged_in') === 'true';
+  });
+  
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
-    const savedId = localStorage.getItem('ams_logged_in_user_id');
+    const savedId = localStorage.getItem('ams_logged_in_user_id') || sessionStorage.getItem('ams_logged_in_user_id');
     return (usersData as UserProfile[]).find(u => u.id === savedId) || (usersData as UserProfile[])[0];
   });
   
@@ -41,7 +44,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [selectedRequestForDetail, setSelectedRequestForDetail] = useState<ApprovalRequest | null>(null);
   const [fullScreenPreviewRequest, setFullScreenPreviewRequest] = useState<ApprovalRequest | null>(null);
-  
   const [uploadTask, setUploadTask] = useState<{ fileName: string; progress: number } | null>(null);
 
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
@@ -49,13 +51,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTimeout(() => setNotification(prev => (prev?.message === message ? null : prev)), 4000);
   };
 
+  // Fungsi penembak notifikasi WA via PHP
+  const sendWaNotification = (payload: { type: string, reqId: string, title: string, senderName: string, targetUserId?: string, note?: string }) => {
+    const appUrl = window.location.origin; 
+    fetch(`${API_BASE}/wa_api.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, link: `${appUrl}/?view=${payload.reqId}` })
+    }).catch(() => { /* Gagal diam-diam jika PHP/n8n belum siap */ });
+  };
+
   useEffect(() => {
     fetch(`${API_BASE}/requests_api.php`).then(res => res.json()).then(res => {
        if (res.success && res.data) {
          setRequests(res.data);
          
-         // SMART ROUTING: Saat Refresh Halaman
          if (isLoggedIn && currentUser?.id) {
+            // TANGKAP DEEP LINKING URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const viewReqId = urlParams.get('view');
+            
+            if (viewReqId) {
+              const reqToView = res.data.find((r: ApprovalRequest) => r.id === viewReqId);
+              if (reqToView) setFullScreenPreviewRequest(reqToView);
+              window.history.replaceState({}, document.title, window.location.pathname); // Bersihkan URL agar rapi
+            }
+
+            // SMART ROUTING
             const adaRevisi = res.data.some((r: ApprovalRequest) => r.status === 'needs_revision' && r.requesterId === currentUser.id);
             if (adaRevisi) {
               setActiveTab('tracking');
@@ -68,37 +90,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
      }).catch(err => console.warn('Gagal memuat dokumen:', err));
     
     fetch(`${API_BASE}/sync_users.php`).then(res => res.json()).then(res => {
-       if (res.success && res.data && res.data.length > 0) {
-        setUsers(res.data);
-       } else {
-        fetch(`${API_BASE}/sync_users.php`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(usersData)
-        }).catch(err => console.warn('Gagal menyuntikkan data JSON ke DB:', err));
-      }
+       if (res.success && res.data && res.data.length > 0) setUsers(res.data);
     }).catch(err => console.warn('Gagal memuat API user:', err));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const updatedCurrentUser = users.find(u => u.id === currentUser.id);
-    if (updatedCurrentUser && updatedCurrentUser.signatureBase64 !== currentUser.signatureBase64) {
-      setCurrentUser(updatedCurrentUser);
-    }
-    localStorage.setItem('ams_is_logged_in', isLoggedIn ? 'true' : 'false');
-    if (currentUser?.id) localStorage.setItem('ams_logged_in_user_id', currentUser.id);
-  }, [users, currentUser, isLoggedIn]);
+    if (updatedCurrentUser && updatedCurrentUser.signatureBase64 !== currentUser.signatureBase64) setCurrentUser(updatedCurrentUser);
+  }, [users, currentUser]);
 
   const saveRequestToDb = async (action: 'create' | 'update', reqData: ApprovalRequest, logData?: any) => {
     try {
       await fetch(`${API_BASE}/requests_api.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, request_data: reqData, log_data: logData })
       });
-    } catch (e) { console.error('Gagal menyimpan ke database:', e); }
+    } catch (e) { console.error('Gagal menyimpan ke DB:', e); }
   };
 
-  const login = (u: string, p: string) => {
+  const login = (u: string, p: string, rememberMe: boolean) => {
     if (!u || !p) return { success: false, message: 'Username dan Password wajib diisi.' };
     const target = users.find(x => x.name.toLowerCase() === u.toLowerCase() || x.id.toLowerCase() === u.toLowerCase());
     if (!target) return { success: false, message: 'Akun tidak ditemukan.' };
@@ -108,11 +119,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentUser(target); 
     setIsLoggedIn(true); 
     
-    // SMART ROUTING: Saat Login
-    const adaRevisi = requests.some(r => r.status === 'needs_revision' && r.requesterId === target.id);
-    if (adaRevisi) {
-      setActiveTab('tracking');
+    if (rememberMe) {
+      localStorage.setItem('ams_is_logged_in', 'true');
+      localStorage.setItem('ams_logged_in_user_id', target.id);
+      sessionStorage.removeItem('ams_is_logged_in');
+      sessionStorage.removeItem('ams_logged_in_user_id');
     } else {
+      sessionStorage.setItem('ams_is_logged_in', 'true');
+      sessionStorage.setItem('ams_logged_in_user_id', target.id);
+      localStorage.removeItem('ams_is_logged_in');
+      localStorage.removeItem('ams_logged_in_user_id');
+    }
+
+    const adaRevisi = requests.some(r => r.status === 'needs_revision' && r.requesterId === target.id);
+    if (adaRevisi) { setActiveTab('tracking'); } 
+    else {
       const butuhPersetujuan = requests.some(r => r.status === 'in_progress' && r.flow[r.currentStepIndex]?.userId === target.id);
       setActiveTab(butuhPersetujuan ? 'approval' : 'tracking');
     }
@@ -121,7 +142,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true };
   };
   
-  const logout = () => { setIsLoggedIn(false); localStorage.removeItem('ams_is_logged_in'); };
+  const logout = () => { 
+    setIsLoggedIn(false); 
+    localStorage.removeItem('ams_is_logged_in'); localStorage.removeItem('ams_logged_in_user_id');
+    sessionStorage.removeItem('ams_is_logged_in'); sessionStorage.removeItem('ams_logged_in_user_id');
+  };
   
   const saveSignature = async (userId: string, sig: string) => {
     setUsers(prev => prev.map(u => (u.id === userId ? { ...u, signatureBase64: sig } : u)));
@@ -136,57 +161,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const uploadToHostinger = (base64Data: string, fileName: string, categoryStr: string): Promise<string> => {
     return new Promise((resolve) => {
       if (base64Data.startsWith('http')) return resolve(base64Data);
-      
       setUploadTask({ fileName, progress: 0 });
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${API_BASE}/upload.php`);
       xhr.setRequestHeader('Content-Type', 'application/json');
-      
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          const percentComplete = Math.round((e.loaded / e.total) * 100);
-          setUploadTask({ fileName, progress: percentComplete });
-        }
-      };
-      
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) setUploadTask({ fileName, progress: Math.round((e.loaded / e.total) * 100) }); };
       xhr.onload = () => {
         setTimeout(() => setUploadTask(null), 1000);
         if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const res = JSON.parse(xhr.responseText);
-            resolve(res.success ? res.fileUrl : base64Data);
-          } catch (err) { resolve(base64Data); }
-        } else {
-          resolve(base64Data);
-        }
+          try { const res = JSON.parse(xhr.responseText); resolve(res.success ? res.fileUrl : base64Data); } catch (err) { resolve(base64Data); }
+        } else resolve(base64Data);
       };
-      
-      xhr.onerror = () => {
-        setUploadTask(null);
-        showToast('Koneksi terputus saat mengunggah file.', 'error');
-        resolve(base64Data);
-      };
-      
+      xhr.onerror = () => { setUploadTask(null); showToast('Koneksi terputus saat mengunggah.', 'error'); resolve(base64Data); };
       xhr.send(JSON.stringify({ pdfDataUrl: base64Data, fileName, category: categoryStr }));
     });
   };
 
   const blobToBase64 = async (blobUrl: string): Promise<string> => {
     if (!blobUrl.startsWith('blob:')) return blobUrl;
-    const res = await fetch(blobUrl);
-    const blob = await res.blob();
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(blob);
-    });
+    const res = await fetch(blobUrl); const blob = await res.blob();
+    return new Promise((resolve) => { const reader = new FileReader(); reader.onloadend = () => resolve(reader.result as string); reader.readAsDataURL(blob); });
   };
 
   const createNewRequest = async (t: string, fn: string, fd: string, a: any[], tp: number, c: 'Design' | 'WO Existing', sp: number[], forceNewPage: boolean = false) => {
     const requestId = `REQ-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const steps: ApproverStep[] = a.map((appr, idx) => ({ id: `step_${requestId}_${idx}`, order: idx, userId: appr.userId, userName: appr.userName, roleTitle: appr.roleTitle, status: idx === 0 ? 'waiting' : 'pending' }));
     const safeFileName = `${requestId}_${fn.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-    
     const livePdfUrl = await uploadToHostinger(fd, safeFileName, c);
     
     const newReq: any = {
@@ -198,6 +198,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     setRequests(prev => [newReq as ApprovalRequest, ...prev]);
     await saveRequestToDb('create', newReq, { actor_name: currentUser.name, action: 'Submit', note: `Dokumen diajukan ke kategori ${c === 'Design' ? 'Design' : 'In General'}` });
+    
+    // TRIGGER WA: Dokumen Baru ke Approver 1
+    sendWaNotification({ type: 'new_request', reqId: requestId, title: t, senderName: currentUser.name, targetUserId: steps[0].userId });
     showToast('Pengajuan berhasil dikirim.', 'success');
     return requestId;
   };
@@ -211,13 +214,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const idx = req.currentStepIndex;
       const isForceNewPage = (req as any).forceNewPage || false;
-      
       const res = await executeOneClickAutoSign(req.pdfDataUrl, sig, req.flow[idx], req.flow, req.category, req.selectedPages, req.id, 'WO', isForceNewPage);
       if (!res.success) return { success: false, message: res.error || 'Gagal.' };
       
       const base64Signed = await blobToBase64(res.signedPdfUrl);
       const liveSignedUrl = await uploadToHostinger(base64Signed, req.pdfFileName, req.category);
-      
       const nextStepIndex = idx + 1;
       const isCompleted = nextStepIndex >= req.flow.length;
       const updatedFlow = req.flow.map((step, i) => {
@@ -228,13 +229,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       
       const updatedReq = {
          ...req, flow: updatedFlow, currentStepIndex: nextStepIndex,
-         status: isCompleted ? 'completed' : 'in_progress', updatedAt: new Date().toISOString(),
-         pdfDataUrl: liveSignedUrl
+         status: isCompleted ? 'completed' : 'in_progress', updatedAt: new Date().toISOString(), pdfDataUrl: liveSignedUrl
        };
       
       setRequests(prev => prev.map(r => r.id === requestId ? updatedReq as ApprovalRequest : r));
       await saveRequestToDb('update', updatedReq as ApprovalRequest, { actor_name: currentUser.name, action: 'Approve', note: `Tahap ${idx + 1} disetujui` });
       
+      // TRIGGER WA: Disetujui
+      if (isCompleted) {
+        sendWaNotification({ type: 'completed', reqId: requestId, title: req.title, senderName: currentUser.name, targetUserId: req.requesterId });
+      } else {
+        sendWaNotification({ type: 'forwarded', reqId: requestId, title: req.title, senderName: currentUser.name, targetUserId: updatedFlow[nextStepIndex].userId });
+      }
+
       return { success: true, message: isCompleted ? 'Selesai.' : 'Diteruskan.' };
     } catch (err: any) { return { success: false, message: err?.message }; }
   };
@@ -242,42 +249,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const requestRevision = async (requestId: string, pageReviews: PageReviewItem[], generalNote?: string) => {
     const req = requests.find(r => r.id === requestId);
     if (!req) return;
-    const updatedFlow = [...req.flow];
-    updatedFlow[req.currentStepIndex].status = 'needs_revision';
-    
+    const updatedFlow = [...req.flow]; updatedFlow[req.currentStepIndex].status = 'needs_revision';
     const newHistoryItem: RevisionHistoryItem = {
-      id: `rev_${Date.now()}`, createdAt: new Date().toISOString(),
-      requestedByUserId: currentUser.id, requestedByUserName: currentUser.name, requestedByUserRole: currentUser.role,
-      pageReviews: pageReviews || [], generalNote: generalNote || 'Revisi diperlukan'
+      id: `rev_${Date.now()}`, createdAt: new Date().toISOString(), requestedByUserId: currentUser.id, requestedByUserName: currentUser.name, requestedByUserRole: currentUser.role, pageReviews: pageReviews || [], generalNote: generalNote || 'Revisi diperlukan'
     };
     const updatedReq = {
-      ...req, status: 'needs_revision', notes: generalNote || 'Perbaikan diminta oleh ' + currentUser.name,
-      lastRevisionRequestedBy: currentUser.name, flow: updatedFlow,
-      revisionHistory: [...(req.revisionHistory || []), newHistoryItem]
+      ...req, status: 'needs_revision', notes: generalNote || 'Perbaikan diminta oleh ' + currentUser.name, lastRevisionRequestedBy: currentUser.name, flow: updatedFlow, revisionHistory: [...(req.revisionHistory || []), newHistoryItem]
     };
     setRequests(prev => prev.map(r => r.id === requestId ? updatedReq as ApprovalRequest : r));
     await saveRequestToDb('update', updatedReq as ApprovalRequest, { actor_name: currentUser.name, action: 'Needs Revision', note: generalNote || 'Dokumen butuh revisi' });
+    
+    // TRIGGER WA: Butuh Revisi
+    sendWaNotification({ type: 'needs_revision', reqId: requestId, title: req.title, senderName: currentUser.name, targetUserId: req.requesterId, note: generalNote });
     showToast('Dokumen dikembalikan ke pengaju untuk direvisi.', 'info');
   };
 
   const rejectRequest = async (requestId: string, reason: string) => {
     const req = requests.find(r => r.id === requestId);
     if (!req) return;
-    const updatedFlow = [...req.flow];
-    updatedFlow[req.currentStepIndex].status = 'rejected';
+    const updatedFlow = [...req.flow]; updatedFlow[req.currentStepIndex].status = 'rejected';
     const updatedReq = { ...req, status: 'rejected', notes: reason, flow: updatedFlow };
     setRequests(prev => prev.map(r => r.id === requestId ? updatedReq as ApprovalRequest : r));
     await saveRequestToDb('update', updatedReq as ApprovalRequest, { actor_name: currentUser.name, action: 'Rejected', note: reason });
+    
+    // TRIGGER WA: Ditolak
+    sendWaNotification({ type: 'rejected', reqId: requestId, title: req.title, senderName: currentUser.name, targetUserId: req.requesterId, note: reason });
     showToast('Dokumen ditolak.', 'error');
   };
 
   const addAuditNote = async (id: string, pageNumber: number, content: string, status: 'approved' | 'needs_revision' | 'info' = 'info') => {
     const req = requests.find(r => r.id === id);
     if (!req) return;
-    const newNote: AuditNote = {
-      id: `note_${Date.now()}`, pageNumber, authorId: currentUser.id, authorName: currentUser.name,
-      authorRole: currentUser.role, content, status, createdAt: new Date().toISOString()
-    };
+    const newNote: AuditNote = { id: `note_${Date.now()}`, pageNumber, authorId: currentUser.id, authorName: currentUser.name, authorRole: currentUser.role, content, status, createdAt: new Date().toISOString() };
     const updatedReq = { ...req, auditNotes: [...(req.auditNotes || []), newNote] };
     setRequests(prev => prev.map(r => r.id === id ? updatedReq as ApprovalRequest : r));
     await saveRequestToDb('update', updatedReq as ApprovalRequest, { actor_name: currentUser.name, action: 'Add Note', note: `Halaman ${pageNumber}: ${content}` });
@@ -287,8 +290,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const reqToUpdate = requests.find(r => r.id === requestId);
     if (!reqToUpdate) return;
     
-    let finalUrl = newPdfDataUrl;
-    let finalFileName = reqToUpdate.pdfFileName;
+    let finalUrl = newPdfDataUrl; let finalFileName = reqToUpdate.pdfFileName;
     const updatedHistory = [...(reqToUpdate.revisionHistory || [])];
     const revCount = updatedHistory.length;
     
@@ -301,9 +303,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let updatedFlow = [...reqToUpdate.flow];
     let newStepIndex = reqToUpdate.currentStepIndex;
     if (newPdfDataUrl) {
-      updatedFlow = updatedFlow.map((step, idx) => ({
-        ...step, status: idx === 0 ? 'waiting' : 'pending', signedAt: undefined, signatureUrl: undefined
-      }));
+      updatedFlow = updatedFlow.map((step, idx) => ({ ...step, status: idx === 0 ? 'waiting' : 'pending', signedAt: undefined, signatureUrl: undefined }));
       newStepIndex = 0;
     } else {
       updatedFlow[reqToUpdate.currentStepIndex].status = 'waiting';
@@ -316,12 +316,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     const finalReq = {
       ...reqToUpdate, status: 'in_progress', pdfDataUrl: finalUrl || reqToUpdate.pdfDataUrl,
-      pdfFileName: finalFileName, flow: updatedFlow, currentStepIndex: newStepIndex,
-      revisionHistory: updatedHistory, notes: ''
+      pdfFileName: finalFileName, flow: updatedFlow, currentStepIndex: newStepIndex, revisionHistory: updatedHistory, notes: ''
     };
     
     setRequests(prev => prev.map(r => r.id === requestId ? finalReq as ApprovalRequest : r));
     await saveRequestToDb('update', finalReq as ApprovalRequest, { actor_name: currentUser.name, action: 'Resubmit', note: newPdfDataUrl ? 'Mengunggah file revisi' : 'Membalas catatan tanpa file baru' });
+    
+    // TRIGGER WA: Balasan Revisi
+    sendWaNotification({ type: 'revision_submitted', reqId: requestId, title: reqToUpdate.title, senderName: currentUser.name, targetUserId: updatedFlow[newStepIndex].userId, note: note });
     showToast('Revisi berhasil dikirim kembali.', 'success');
   };
 
@@ -332,8 +334,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider value={{ activeTab, setActiveTab, users, currentUser, setCurrentUser, isLoggedIn, login, logout, requests, saveSignature, createNewRequest, performAutoSignApproval, uploadPRAndForward, uploadPOAndComplete, rejectPRToMega, requestRevision, rejectRequest, notification, showToast, selectedRequestForDetail, setSelectedRequestForDetail, fullScreenPreviewRequest, setFullScreenPreviewRequest, addAuditNote, submitRevisionByRequester }}>
       {children}
-      
-      {/* GLOBAL TOAST UPLOAD PROGRESS */}
       {uploadTask && (
         <div className="fixed bottom-6 right-6 z-50 bg-neutral-900 text-white p-4 rounded-xl shadow-2xl w-80 animate-in slide-in-from-bottom-5">
           <div className="flex items-center gap-3 mb-2">
