@@ -150,9 +150,9 @@ export const PengajuanView: React.FC = () => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto py-12 px-4 sm:px-6">
-      <div className="mb-10">
-        <h1 className="text-2xl font-bold text-neutral-900 tracking-tight mb-2">Buat Pengajuan</h1>
+    <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6">
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-neutral-900">Buat Pengajuan Baru</h1>
         <p className="text-sm text-neutral-500">Unggah dokumen dan lengkapi detail persetujuan di bawah ini.</p>
       </div>
       
