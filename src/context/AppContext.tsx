@@ -27,7 +27,8 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const API_BASE = 'https://kintouncoffee.id/ams/api';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('approval');
+  // Default tab diset ke tracking (Surat Saya) sebagai prioritas terakhir
+  const [activeTab, setActiveTab] = useState<TabType>('tracking');
   const [users, setUsers] = useState<UserProfile[]>(usersData as UserProfile[]);
   
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => localStorage.getItem('ams_is_logged_in') === 'true');
@@ -41,7 +42,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedRequestForDetail, setSelectedRequestForDetail] = useState<ApprovalRequest | null>(null);
   const [fullScreenPreviewRequest, setFullScreenPreviewRequest] = useState<ApprovalRequest | null>(null);
   
-  // State untuk melacak Global Upload Progress
   const [uploadTask, setUploadTask] = useState<{ fileName: string; progress: number } | null>(null);
 
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
@@ -51,7 +51,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     fetch(`${API_BASE}/requests_api.php`).then(res => res.json()).then(res => {
-       if (res.success && res.data) setRequests(res.data);
+       if (res.success && res.data) {
+         setRequests(res.data);
+         
+         // SMART ROUTING: Saat Refresh Halaman
+         if (isLoggedIn && currentUser?.id) {
+            const adaRevisi = res.data.some((r: ApprovalRequest) => r.status === 'needs_revision' && r.requesterId === currentUser.id);
+            if (adaRevisi) {
+              setActiveTab('tracking');
+            } else {
+              const butuhPersetujuan = res.data.some((r: ApprovalRequest) => r.status === 'in_progress' && r.flow[r.currentStepIndex]?.userId === currentUser.id);
+              setActiveTab(butuhPersetujuan ? 'approval' : 'tracking');
+            }
+         }
+       }
      }).catch(err => console.warn('Gagal memuat dokumen:', err));
     
     fetch(`${API_BASE}/sync_users.php`).then(res => res.json()).then(res => {
@@ -63,6 +76,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }).catch(err => console.warn('Gagal menyuntikkan data JSON ke DB:', err));
       }
     }).catch(err => console.warn('Gagal memuat API user:', err));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -90,8 +104,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!target) return { success: false, message: 'Akun tidak ditemukan.' };
     const expectedPassword = `${target.name.trim().split(/\s+/)[0].toLowerCase()}1`;
     if (p !== expectedPassword) return { success: false, message: 'Kata sandi salah.' };
-    setCurrentUser(target); setIsLoggedIn(true); setActiveTab('approval');
-    showToast(`Berhasil masuk sebagai ${target.name}`, 'success'); return { success: true };
+    
+    setCurrentUser(target); 
+    setIsLoggedIn(true); 
+    
+    // SMART ROUTING: Saat Login
+    const adaRevisi = requests.some(r => r.status === 'needs_revision' && r.requesterId === target.id);
+    if (adaRevisi) {
+      setActiveTab('tracking');
+    } else {
+      const butuhPersetujuan = requests.some(r => r.status === 'in_progress' && r.flow[r.currentStepIndex]?.userId === target.id);
+      setActiveTab(butuhPersetujuan ? 'approval' : 'tracking');
+    }
+
+    showToast(`Berhasil masuk sebagai ${target.name}`, 'success'); 
+    return { success: true };
   };
   
   const logout = () => { setIsLoggedIn(false); localStorage.removeItem('ams_is_logged_in'); };
@@ -106,7 +133,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Tanda tangan tersimpan permanen di server!', 'success');
   };
 
-  // Mengubah fetch menjadi XHR untuk melacak Persentase Upload
   const uploadToHostinger = (base64Data: string, fileName: string, categoryStr: string): Promise<string> => {
     return new Promise((resolve) => {
       if (base64Data.startsWith('http')) return resolve(base64Data);
@@ -124,7 +150,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       
       xhr.onload = () => {
-        setTimeout(() => setUploadTask(null), 1000); // Tahan 1 detik saat 100%
+        setTimeout(() => setUploadTask(null), 1000);
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const res = JSON.parse(xhr.responseText);
