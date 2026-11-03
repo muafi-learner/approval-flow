@@ -16,11 +16,17 @@ export const LoginView: React.FC = () => {
     setError('');
     setIsLoading(true);
     
-    setTimeout(() => {
-      const res = login(username, password, rememberMe);
-      if (!res.success) setError(res.message || 'Gagal login');
+    try {
+      // Menggunakan await karena fungsi login sekarang menembak API backend
+      const res = await login(username, password, rememberMe);
+      if (!res.success) {
+        setError(res.message || 'Gagal login. Periksa kembali data Anda.');
+      }
+    } catch (err) {
+      setError('Terjadi kesalahan koneksi ke server.');
+    } finally {
       setIsLoading(false);
-    }, 600);
+    }
   };
 
   return (
@@ -50,7 +56,7 @@ export const LoginView: React.FC = () => {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full px-4 py-3.5 bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all sm:text-sm"
-                placeholder="Misal: Ivan atau ID-001"
+                placeholder="Misal: user_hadi atau Hadi"
               />
             </div>
 

@@ -7,7 +7,7 @@ import { UploadCloud } from 'lucide-react';
 interface AppContextType {
   activeTab: TabType; setActiveTab: (tab: TabType) => void;
   users: UserProfile[]; currentUser: UserProfile; setCurrentUser: (user: UserProfile) => void;
-  isLoggedIn: boolean; login: (u: string, p: string, rememberMe: boolean) => { success: boolean; message?: string }; logout: () => void;
+  isLoggedIn: boolean; login: (u: string, p: string, rememberMe: boolean) => Promise<{ success: boolean; message?: string }>; logout: () => void;
   requests: ApprovalRequest[]; saveSignature: (userId: string, sig: string) => void;
   createNewRequest: (t: string, fn: string, fd: string, a: any[], tp: number, c: 'Design' | 'WO Existing', sp: number[], forceNewPage?: boolean) => Promise<string>;
   performAutoSignApproval: (requestId: string) => Promise<{ success: boolean; message: string }>;
@@ -109,37 +109,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) { console.error('Gagal menyimpan ke DB:', e); }
   };
 
-  const login = (u: string, p: string, rememberMe: boolean) => {
+  const login = async (u: string, p: string, rememberMe: boolean) => {
     if (!u || !p) return { success: false, message: 'Username dan Password wajib diisi.' };
-    const target = users.find(x => x.name.toLowerCase() === u.toLowerCase() || x.id.toLowerCase() === u.toLowerCase());
-    if (!target) return { success: false, message: 'Akun tidak ditemukan.' };
-    const expectedPassword = `${target.name.trim().split(/\s+/)[0].toLowerCase()}1`;
-    if (p !== expectedPassword) return { success: false, message: 'Kata sandi salah.' };
     
-    setCurrentUser(target); 
-    setIsLoggedIn(true); 
-    
-    if (rememberMe) {
-      localStorage.setItem('ams_is_logged_in', 'true');
-      localStorage.setItem('ams_logged_in_user_id', target.id);
-      sessionStorage.removeItem('ams_is_logged_in');
-      sessionStorage.removeItem('ams_logged_in_user_id');
-    } else {
-      sessionStorage.setItem('ams_is_logged_in', 'true');
-      sessionStorage.setItem('ams_logged_in_user_id', target.id);
-      localStorage.removeItem('ams_is_logged_in');
-      localStorage.removeItem('ams_logged_in_user_id');
-    }
+    try {
+      const response = await fetch(`${API_BASE}/login_api.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u, password: p })
+      });
+      
+      const res = await response.json();
+      if (!res.success) return { success: false, message: res.message };
 
-    const adaRevisi = requests.some(r => r.status === 'needs_revision' && r.requesterId === target.id);
-    if (adaRevisi) { setActiveTab('tracking'); } 
-    else {
-      const butuhPersetujuan = requests.some(r => r.status === 'in_progress' && r.flow[r.currentStepIndex]?.userId === target.id);
-      setActiveTab(butuhPersetujuan ? 'approval' : 'tracking');
-    }
+      // Cari data lengkap dari state berdasarkan ID yang divalidasi server
+      const target = users.find(x => x.id === res.data.id) || users[0];
+      
+      setCurrentUser(target); 
+      setIsLoggedIn(true); 
+      
+      if (rememberMe) {
+        localStorage.setItem('ams_is_logged_in', 'true');
+        localStorage.setItem('ams_logged_in_user_id', target.id);
+        sessionStorage.removeItem('ams_is_logged_in');
+        sessionStorage.removeItem('ams_logged_in_user_id');
+      } else {
+        sessionStorage.setItem('ams_is_logged_in', 'true');
+        sessionStorage.setItem('ams_logged_in_user_id', target.id);
+        localStorage.removeItem('ams_is_logged_in');
+        localStorage.removeItem('ams_logged_in_user_id');
+      }
 
-    showToast(`Berhasil masuk sebagai ${target.name}`, 'success'); 
-    return { success: true };
+      const adaRevisi = requests.some(r => r.status === 'needs_revision' && r.requesterId === target.id);
+      if (adaRevisi) { setActiveTab('tracking'); } 
+      else {
+        const butuhPersetujuan = requests.some(r => r.status === 'in_progress' && r.flow[r.currentStepIndex]?.userId === target.id);
+        setActiveTab(butuhPersetujuan ? 'approval' : 'tracking');
+      }
+
+      showToast(`Berhasil masuk sebagai ${target.name}`, 'success'); 
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: 'Koneksi ke server gagal.' };
+    }
   };
   
   const logout = () => { 
