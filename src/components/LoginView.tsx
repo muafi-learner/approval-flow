@@ -49,14 +49,14 @@ export const LoginView: React.FC = () => {
         <div className="bg-white py-8 px-4 shadow-xl shadow-neutral-200/50 sm:rounded-[32px] sm:px-10 border border-neutral-100">
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
-              <label className="block text-sm font-semibold text-neutral-900 mb-2">Nama atau ID Pengguna</label>
+              <label className="block text-sm font-semibold text-neutral-900 mb-2">Nama Pengguna</label>
               <input 
                 type="text" 
                 required 
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full px-4 py-3.5 bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all sm:text-sm"
-                placeholder="Misal: user_hadi atau Hadi"
+                placeholder="Budi"
               />
             </div>
 
