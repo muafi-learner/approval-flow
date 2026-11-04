@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { PenTool, Trash2, CheckCircle2, X, Scissors, Upload } from 'lucide-react';
+import { PenTool, Trash2, CheckCircle2, X, Upload, Info } from 'lucide-react';
 import { cropCanvasTo4by3, SIGNATURE_WIDTH, SIGNATURE_HEIGHT } from '../services/signatureHelper';
 
 interface SignatureModalProps {
@@ -14,10 +14,12 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasDrawn, setHasDrawn] = useState(false);
+  const [showUploadWarning, setShowUploadWarning] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setHasDrawn(false);
+      setShowUploadWarning(false);
       setTimeout(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -38,7 +40,6 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose 
       showToast('Harap unggah file gambar (PNG/JPG)', 'error');
       return;
     }
-
     if (file.size > 1 * 1024 * 1024) {
       showToast('Ukuran gambar melebihi batas (Maksimal 1MB)', 'error');
       e.target.value = '';
@@ -144,8 +145,9 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose 
 
   return (
     <div className="fixed inset-0 z-[100] bg-neutral-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl max-w-md w-full p-8 shadow-2xl animate-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-2xl max-w-md w-full p-8 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-200">
         
+        {/* Modal Konten Utama */}
         <div className="flex items-start justify-between mb-8">
           <div className="flex gap-4">
             <div className="w-10 h-10 rounded-full bg-neutral-50 flex items-center justify-center shrink-0 border border-neutral-100">
@@ -156,10 +158,10 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose 
               <p className="text-xs text-neutral-500 mt-0.5 font-medium">{currentUser.name} <span className="text-neutral-300 mx-1">•</span> {currentUser.role}</p>
             </div>
           </div>
-          <button 
-            type="button" 
-            onClick={onClose} 
-            className="p-2 -mr-2 -mt-2 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-50 rounded-full transition-colors"
+          <button
+             type="button"
+             onClick={onClose}
+             className="p-2 -mr-2 -mt-2 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-50 rounded-full transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -169,20 +171,20 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose 
           <span className="text-xs font-semibold text-neutral-700">Area Kanvas</span>
           <div className="flex items-center gap-3">
             <input type="file" accept="image/png, image/jpeg" ref={fileInputRef} onChange={handleUploadImage} className="hidden" />
-            <button 
-              type="button" 
-              onClick={() => fileInputRef.current?.click()} 
-              className="text-[11px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors flex items-center gap-1.5"
+            <button
+               type="button"
+               onClick={() => setShowUploadWarning(true)}
+               className="text-[11px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors flex items-center gap-1.5"
             >
               <Upload className="w-3.5 h-3.5" /> Unggah (Maks. 1MB)
             </button>
             {hasDrawn && (
               <>
                 <span className="w-px h-3 bg-neutral-200" />
-                <button 
-                  type="button" 
-                  onClick={clearCanvas} 
-                  className="text-[11px] font-medium text-rose-500 hover:text-rose-700 transition-colors flex items-center gap-1.5"
+                <button
+                   type="button"
+                   onClick={clearCanvas}
+                   className="text-[11px] font-medium text-rose-500 hover:text-rose-700 transition-colors flex items-center gap-1.5"
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Bersihkan
                 </button>
@@ -191,11 +193,11 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose 
           </div>
         </div>
 
-        <div 
-          className={`relative rounded-xl overflow-hidden transition-all duration-300 flex items-center justify-center touch-none ${
-            hasDrawn 
-              ? 'bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_2px_8px_rgba(0,0,0,0.04)]' 
-              : 'bg-neutral-50/50 border-2 border-dashed border-neutral-200 hover:bg-neutral-50 hover:border-neutral-300'
+        <div
+           className={`relative rounded-xl overflow-hidden transition-all duration-300 flex items-center justify-center touch-none mb-6 ${
+            hasDrawn
+               ? 'bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_2px_8px_rgba(0,0,0,0.04)]'
+               : 'bg-neutral-50/50 border-2 border-dashed border-neutral-200 hover:bg-neutral-50 hover:border-neutral-300'
           }`}
         >
           <canvas
@@ -218,12 +220,7 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose 
           )}
         </div>
 
-        <div className="mt-4 flex items-center justify-between text-[10px] text-neutral-400 font-medium px-1">
-          <span className="flex items-center gap-1.5"><Scissors className="w-3 h-3" /> Rasio 4:3 (Otomatis)</span>
-          <span>Tinta Hitam Pekat (#000000)</span>
-        </div>
-
-        <div className="mt-8 pt-5 border-t border-neutral-100 flex items-center gap-3">
+        <div className="pt-5 border-t border-neutral-100 flex items-center gap-3">
           <button
             type="button"
             onClick={onClose}
@@ -242,6 +239,39 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose 
           </button>
         </div>
 
+        {/* OVERLAY POP-UP WARNING UNGGAH */}
+        {showUploadWarning && (
+          <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
+            <div className="bg-white border border-neutral-200 rounded-2xl shadow-xl w-full p-6 flex flex-col items-center text-center animate-in zoom-in-95 duration-200">
+              <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mb-4 text-blue-600 border border-blue-100">
+                <Info className="w-6 h-6" />
+              </div>
+              <h4 className="text-sm font-bold text-neutral-900 mb-2">Ketentuan Format Gambar</h4>
+              <p className="text-xs text-neutral-600 leading-relaxed mb-6">
+                Untuk menghindari error pada sistem stempel PDF, pastikan gambar yang Anda unggah memiliki format <strong>PNG transparan (tanpa latar belakang putih)</strong> dengan rasio proporsi <strong>4:3</strong>.
+              </p>
+              <div className="flex items-center gap-3 w-full">
+                <button
+                  type="button"
+                  onClick={() => setShowUploadWarning(false)}
+                  className="flex-1 py-2.5 text-xs font-semibold text-neutral-600 bg-neutral-50 hover:bg-neutral-100 rounded-lg transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUploadWarning(false);
+                    setTimeout(() => fileInputRef.current?.click(), 100);
+                  }}
+                  className="flex-1 py-2.5 text-xs font-semibold text-white bg-[#0B1A28] hover:bg-[#152D40] rounded-lg transition-colors"
+                >
+                  Mengerti & Lanjutkan
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

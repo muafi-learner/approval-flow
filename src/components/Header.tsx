@@ -1,25 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { 
-  FileText, 
-  Activity, 
-  CheckSquare, 
-  PenTool, 
-  LogOut, 
-  ChevronDown, 
-  ShieldCheck
+import {
+   FileText,
+   Activity,
+   CheckSquare,
+   PenTool,
+   LogOut,
+   ChevronDown
 } from 'lucide-react';
 import { SignatureModal } from './SignatureModal';
 
 export const Header: React.FC = () => {
-  const { 
-    activeTab, 
-    setActiveTab, 
-    currentUser, 
-    requests, 
-    logout 
-  } = useApp();
-  
+  const { activeTab, setActiveTab, currentUser, requests, logout } = useApp();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -40,7 +32,6 @@ export const Header: React.FC = () => {
     return currentStep && currentStep.userId === currentUser.id;
   }).length;
 
-  // PERBAIKAN: Urutan tab diubah sesuai permintaan
   const navItems = [
     { id: 'tracking', label: 'Surat Saya', icon: Activity },
     { id: 'approval', label: 'Persetujuan', icon: CheckSquare, badge: incomingCount },
@@ -49,23 +40,21 @@ export const Header: React.FC = () => {
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-neutral-200 transition-colors">
+      <header className="sticky top-0 z-40 bg-[#0B1A28] border-b border-[#152D40] transition-colors shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14 sm:h-16 gap-4">
             
-            {/* Logo */}
             <div className="flex items-center gap-2.5 shrink-0">
-              <div className="w-8 h-8 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-xs tracking-wider shadow-sm">
+              <div className="w-8 h-8 rounded-lg bg-white text-[#0B1A28] flex items-center justify-center font-bold text-xs tracking-wider shadow-sm">
                 AMS
               </div>
               <div className="flex flex-col">
-                <span className="text-sm font-bold text-neutral-900 tracking-tight leading-none">
+                <span className="text-sm font-bold text-white tracking-tight leading-none">
                   Approval
                 </span>
               </div>
             </div>
 
-            {/* Navigation */}
             <nav className="hidden sm:flex items-center gap-1">
               {navItems.map(item => {
                 const Icon = item.icon;
@@ -75,15 +64,15 @@ export const Header: React.FC = () => {
                     key={item.id}
                     onClick={() => setActiveTab(item.id as any)}
                     className={`relative flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                      isActive 
-                        ? 'bg-neutral-100 text-neutral-900' 
-                        : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-50'
+                      isActive
+                        ? 'bg-white/10 text-white'
+                        : 'text-white/60 hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <Icon className="w-4 h-4 shrink-0" />
                     <span>{item.label}</span>
                     {item.badge && item.badge > 0 ? (
-                      <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-neutral-900 text-white leading-none">
+                      <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-white text-[#0B1A28] leading-none">
                         {item.badge}
                       </span>
                     ) : null}
@@ -92,20 +81,19 @@ export const Header: React.FC = () => {
               })}
             </nav>
 
-            {/* Profile Dropdown */}
             <div className="relative flex items-center shrink-0" ref={dropdownRef}>
               <button
                 type="button"
                 onClick={() => setShowProfileDropdown(!showProfileDropdown)}
-                className="flex items-center gap-2 pl-2 pr-1.5 py-1 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
+                className="flex items-center gap-2 pl-2 pr-1.5 py-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
               >
-                <div className="w-7 h-7 rounded-md bg-neutral-200 text-neutral-700 flex items-center justify-center text-xs font-bold shrink-0">
+                <div className="w-7 h-7 rounded-md bg-white/20 text-white flex items-center justify-center text-xs font-bold shrink-0">
                   {currentUser.name[0]}
                 </div>
                 <div className="hidden sm:block text-left">
-                  <div className="text-sm font-medium text-neutral-900 flex items-center gap-1">
+                  <div className="text-sm font-medium text-white flex items-center gap-1">
                     {currentUser.name}
-                    <ChevronDown className="w-3.5 h-3.5 text-neutral-400" />
+                    <ChevronDown className="w-3.5 h-3.5 text-white/60" />
                   </div>
                 </div>
               </button>
@@ -117,7 +105,6 @@ export const Header: React.FC = () => {
                       <h4 className="text-sm font-bold text-neutral-900 truncate">
                         {currentUser.name}
                       </h4>
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
                     </div>
                     <div className="text-xs text-neutral-500 truncate">
                       {currentUser.role}
@@ -127,7 +114,7 @@ export const Header: React.FC = () => {
                   <div className="px-4 py-2">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium text-neutral-700">Tanda Tangan Digital</span>
-                      <button 
+                      <button
                         onClick={() => { setShowSignatureModal(true); setShowProfileDropdown(false); }}
                         className="text-[11px] text-neutral-500 hover:text-neutral-900 font-medium flex items-center gap-1 transition-colors cursor-pointer bg-neutral-100 px-2 py-0.5 rounded"
                       >
@@ -160,8 +147,7 @@ export const Header: React.FC = () => {
           </div>
         </div>
 
-        {/* Mobile Navigation Navigation */}
-        <div className="sm:hidden border-t border-neutral-200 overflow-x-auto hide-scrollbar">
+        <div className="sm:hidden border-t border-[#152D40] overflow-x-auto hide-scrollbar">
           <nav className="flex items-center px-2 py-1">
             {navItems.map(item => {
               const Icon = item.icon;
@@ -171,13 +157,13 @@ export const Header: React.FC = () => {
                   key={item.id}
                   onClick={() => setActiveTab(item.id as any)}
                   className={`flex-1 flex justify-center items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
-                    isActive ? 'text-neutral-900 border-b-2 border-neutral-900' : 'text-neutral-500 hover:text-neutral-900'
+                    isActive ? 'text-white border-b-2 border-white' : 'text-white/60 hover:text-white'
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
                   <span>{item.label}</span>
                   {item.badge && item.badge > 0 && (
-                    <span className="px-1.5 rounded-full text-[9px] font-bold bg-neutral-900 text-white">
+                    <span className="px-1.5 rounded-full text-[9px] font-bold bg-white text-[#0B1A28]">
                       {item.badge}
                     </span>
                   )}

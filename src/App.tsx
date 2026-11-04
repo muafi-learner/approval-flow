@@ -54,6 +54,7 @@ const MainContent: React.FC = () => {
         </div>
       )}
       
+      {/* BACKGROUND FOOTER BIRU KINTOUN: bg-[#0B1A28] */}
       <footer className="border-t border-neutral-200 bg-white py-6">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-neutral-500">
           <div>
