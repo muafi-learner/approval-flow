@@ -26,17 +26,25 @@ function drawDigitalStamp(
   x: number, y: number, fontRegular: PDFFont, fontBold: PDFFont, category: 'Design' | 'WO Existing'
 ) {
   if (category === 'Design') {
-    const DESIGN_STAMP_W = 55; const DESIGN_STAMP_H = 45;
+    // Dimensi untuk masing-masing kolom stempel Design
+    const DESIGN_STAMP_W = 45; 
+    const DESIGN_STAMP_H = 65; 
+    
     const sigDims = signatureImage.scale(1.0);
     const aspect = sigDims.width / Math.max(1, sigDims.height);
-    const maxSigW = DESIGN_STAMP_W - 10; const maxSigH = DESIGN_STAMP_H - 18;
-    let sigW = maxSigW; let sigH = sigW / aspect;
+    
+    const maxSigW = DESIGN_STAMP_W - 8; 
+    const maxSigH = DESIGN_STAMP_H - 20; 
+    
+    let sigW = maxSigW; 
+    let sigH = sigW / aspect;
     if (sigH > maxSigH) { sigH = maxSigH; sigW = sigH * aspect; }
-    const signatureYOffset = 6;
+    
+    const signatureYOffset = 8;
     
     page.drawImage(signatureImage, {
       x: x + (DESIGN_STAMP_W - sigW) / 2,
-      y: y + DESIGN_STAMP_H - sigH - 2 + signatureYOffset,
+      y: y + DESIGN_STAMP_H - sigH - 4 + signatureYOffset,
       width: sigW, height: sigH
     });
     
@@ -45,13 +53,13 @@ function drawDigitalStamp(
     const roleAcronym = roleWords.length > 1
       ? roleWords.map(w => w[0]?.toUpperCase()).join('')
       : approver.roleTitle.substring(0, 10).toUpperCase();
-      
-    const nameSize = 7; const roleSize = 6;
+    
+    const nameSize = 6; const roleSize = 5;
     const nameWidth = fontBold.widthOfTextAtSize(firstName, nameSize);
     const roleWidth = fontRegular.widthOfTextAtSize(roleAcronym, roleSize);
     
-    page.drawText(firstName, { x: x + (DESIGN_STAMP_W - nameWidth) / 2, y: y + 10, size: nameSize, font: fontBold, color: rgb(0, 0, 0) });
-    page.drawText(roleAcronym, { x: x + (DESIGN_STAMP_W - roleWidth) / 2, y: y + 3, size: roleSize, font: fontRegular, color: rgb(0, 0, 0) });
+    page.drawText(firstName, { x: x + (DESIGN_STAMP_W - nameWidth) / 2, y: y + 12, size: nameSize, font: fontBold, color: rgb(0, 0, 0.5) });
+    page.drawText(roleAcronym, { x: x + (DESIGN_STAMP_W - roleWidth) / 2, y: y + 5, size: roleSize, font: fontRegular, color: rgb(0, 0, 0.5) });
     
     return { width: DESIGN_STAMP_W, height: DESIGN_STAMP_H };
   } else {
@@ -61,6 +69,7 @@ function drawDigitalStamp(
     const sigDims = signatureImage.scale(1.0);
     const aspect = sigDims.width / Math.max(1, sigDims.height);
     const maxSigW = STAMP_W - 10; const maxSigH = 30;
+    
     let sigW = maxSigW; let sigH = sigW / aspect;
     if (sigH > maxSigH) { sigH = maxSigH; sigW = sigH * aspect; }
     
@@ -96,10 +105,9 @@ export async function executeOneClickAutoSign(
         const response = await fetch(cacheBusterUrl);
         pdfBytes = new Uint8Array(await response.arrayBuffer());
       }
-    } else { 
-      pdfBytes = new Uint8Array(pdfSource); 
+    } else {
+       pdfBytes = new Uint8Array(pdfSource);
     }
-
     const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
     const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -121,18 +129,16 @@ export async function executeOneClickAutoSign(
       const STAMP_W = 130; const STAMP_H = 65;
       const GAP_X = 10; const GAP_Y = 15;
       const marginRight = 40;
-
       const realIndex = allSteps.findIndex(s => s.id === currentApprover.id);
       const safeIndex = realIndex === -1 ? 0 : realIndex;
       
       const row = Math.floor(safeIndex / 4);
       const col = safeIndex % 4;
-      
       const totalCols = Math.min(allSteps.length, 4);
       const totalBlockWidth = (totalCols * STAMP_W) + ((totalCols - 1) * GAP_X);
-
+      
       let pagesToSign = selectedPages.length > 0 ? selectedPages : pdfDoc.getPages().map((_, i) => i + 1);
-
+      
       if (forceNewPage) {
         if (safeIndex === 0) {
           const refPage = pdfDoc.getPages()[0];
@@ -141,21 +147,19 @@ export async function executeOneClickAutoSign(
         }
         pagesToSign = [pdfDoc.getPages().length];
       }
-
+      
       for (const pageNum of pagesToSign) {
         const docPages = pdfDoc.getPages();
         if (pageNum < 1 || pageNum > docPages.length) continue;
         let targetPage = docPages[pageNum - 1];
         
         const { width: pageWidth, height: pageHeight } = targetPage.getSize();
-        
         let baseY = customYOffset !== undefined ? customYOffset : 180;
         if (forceNewPage) baseY = pageHeight - 100;
         
         const startX = pageWidth - marginRight - totalBlockWidth;
         const x = startX + (col * (STAMP_W + GAP_X));
         const y = baseY - (row * (STAMP_H + GAP_Y));
-
         const dims = drawDigitalStamp(targetPage, embeddedSignature, currentApprover, requestId, x, y, fontRegular, fontBold, category);
         
         if (!signedPagesList.includes(pageNum)) signedPagesList.push(pageNum);
@@ -163,27 +167,36 @@ export async function executeOneClickAutoSign(
         totalSigned++;
       }
     } else {
-      const DESIGN_STAMP_W = 55; const DESIGN_STAMP_H = 45; const GAP = -18;
-      const rightMargin = 28; const bottomMargin = 75;
+      // PENYESUAIAN STAMPEL DESIGN (4 Kolom)
+      const DESIGN_STAMP_W = 45; 
+      const DESIGN_STAMP_H = 65; 
+      const GAP_X = 2; // Jarak antar kolom
+      const rightMargin = 30; // Jarak dari ujung kanan kertas
+      const bottomMargin = 75; // Jarak dari bawah kertas
+
       const rawTargetSlots: DetectedSlot[] = [];
       const pages = pdfDoc.getPages();
       let lastPageIndex = pages.length - 1;
-
+      
       if (currentApprover.detectedSlots && currentApprover.detectedSlots.length > 0) {
         rawTargetSlots.push(...currentApprover.detectedSlots);
       } else if (currentApprover.detectedSlot) {
         rawTargetSlots.push(currentApprover.detectedSlot);
       } else {
         const approverIndex = allSteps.findIndex(s => s.id === currentApprover.id);
-        const safeIndex = Math.min(Math.max(0, approverIndex), 1);
+        // Memastikan index tidak melebihi 3 (maksimal 4 approver / 4 kolom)
+        const safeIndex = Math.min(Math.max(0, approverIndex), 3); 
         const pagesToStamp = selectedPages.length > 0 ? selectedPages : [lastPageIndex + 1];
         
         pagesToStamp.forEach(pageNum => {
           const targetPage = pages[pageNum - 1];
           const { width: pageWidth } = targetPage.getSize();
-          const startX = pageWidth - rightMargin - (2 * DESIGN_STAMP_W);
-          const boxX = startX + (safeIndex * (DESIGN_STAMP_W + GAP));
+          
+          // Mulai menggambar kotak dari arah kanan
+          const startX = pageWidth - rightMargin - (4 * DESIGN_STAMP_W) - (3 * GAP_X);
+          const boxX = startX + (safeIndex * (DESIGN_STAMP_W + GAP_X));
           const boxY = bottomMargin;
+          
           rawTargetSlots.push({
             pageIndex: pageNum - 1, pageNumber: pageNum, slotType: 'authorization_box',
             isFooter: true, hasExplicitBox: false, slotLabel: `Posisi Default Design`,
@@ -200,17 +213,18 @@ export async function executeOneClickAutoSign(
         const safeY = typeof slot.y === 'number' ? slot.y : 40;
         const dims = drawDigitalStamp(targetPage, embeddedSignature, currentApprover, requestId, safeX, safeY, fontRegular, fontBold, category);
         const pNum = pageIndex + 1;
+        
         if (!signedPagesList.includes(pNum)) signedPagesList.push(pNum);
         lastFittedCoords = { x: safeX, y: safeY, width: dims.width, height: dims.height };
         totalSigned++;
       }
     }
-
+    
     signedPagesList.sort((a, b) => a - b);
     const modifiedBytes = await pdfDoc.save();
     const blob = new Blob([modifiedBytes as unknown as BlobPart], { type: 'application/pdf' });
     const signedPdfUrl = URL.createObjectURL(blob);
-
+    
     return {
       success: true, signedPdfUrl, signedAt: new Date().toISOString(), detectedPage: signedPagesList[0] || (pdfDoc.getPages().length), signedPages: signedPagesList,
       totalSlotsSigned: totalSigned, coordinates: lastFittedCoords, detectionMethod: 'dynamic_margin_shift', auditStamp: 'Stamp Card Digital'

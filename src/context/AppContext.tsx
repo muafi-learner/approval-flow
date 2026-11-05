@@ -21,6 +21,7 @@ interface AppContextType {
   uploadPRAndForward: (requestId: string, fileName: string, dataUrl: string) => Promise<void>;
   uploadPOAndComplete: (requestId: string, fileName: string, dataUrl: string) => Promise<void>;
   rejectPRToMega: (requestId: string, reason: string) => void;
+  hasPrivilege: (category: string) => boolean; // Fungsi baru untuk mengecek previlese khusus
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -46,6 +47,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [fullScreenPreviewRequest, setFullScreenPreviewRequest] = useState<ApprovalRequest | null>(null);
   const [uploadTask, setUploadTask] = useState<{ fileName: string; progress: number } | null>(null);
 
+  // =====================================================================
+  // KONFIGURASI HAK ISTIMEWA (PRIVILEGES) - ADJUSTABLE
+  // =====================================================================
+  const SPECIAL_PRIVILEGES: Record<string, string[]> = {
+    'user_janet': ['Design'], // Janet memiliki akses ke semua dokumen ber-kategori 'Design'
+    // 'user_ivan': ['Design', 'WO Existing'], // Contoh jika Ivan minta ditambah akses
+  };
+
+  const hasPrivilege = (category: string) => {
+    const userPrivs = SPECIAL_PRIVILEGES[currentUser.id] || [];
+    return userPrivs.includes(category);
+  };
+  // =====================================================================
+
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(prev => (prev?.message === message ? null : prev)), 4000);
@@ -53,7 +68,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Fungsi penembak notifikasi WA via PHP
   const sendWaNotification = (payload: { type: string, reqId: string, title: string, senderName: string, targetUserId?: string, note?: string }) => {
-    const appUrl = window.location.origin; 
+    const appUrl = window.location.origin;
     fetch(`${API_BASE}/wa_api.php`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -88,7 +103,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
          }
        }
      }).catch(err => console.warn('Gagal memuat dokumen:', err));
-    
+     
     fetch(`${API_BASE}/sync_users.php`).then(res => res.json()).then(res => {
        if (res.success && res.data && res.data.length > 0) setUsers(res.data);
     }).catch(err => console.warn('Gagal memuat API user:', err));
@@ -125,8 +140,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Cari data lengkap dari state berdasarkan ID yang divalidasi server
       const target = users.find(x => x.id === res.data.id) || users[0];
       
-      setCurrentUser(target); 
-      setIsLoggedIn(true); 
+      setCurrentUser(target);
+      setIsLoggedIn(true);
       
       if (rememberMe) {
         localStorage.setItem('ams_is_logged_in', 'true');
@@ -141,22 +156,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const adaRevisi = requests.some(r => r.status === 'needs_revision' && r.requesterId === target.id);
-      if (adaRevisi) { setActiveTab('tracking'); } 
+      if (adaRevisi) { setActiveTab('tracking'); }
       else {
         const butuhPersetujuan = requests.some(r => r.status === 'in_progress' && r.flow[r.currentStepIndex]?.userId === target.id);
         setActiveTab(butuhPersetujuan ? 'approval' : 'tracking');
       }
 
-      showToast(`Berhasil masuk sebagai ${target.name}`, 'success'); 
+      showToast(`Berhasil masuk sebagai ${target.name}`, 'success');
       return { success: true };
     } catch (error) {
       return { success: false, message: 'Koneksi ke server gagal.' };
     }
   };
   
-  const logout = () => { 
-    setIsLoggedIn(false); 
-    localStorage.removeItem('ams_is_logged_in'); localStorage.removeItem('ams_logged_in_user_id');
+  const logout = () => {
+     setIsLoggedIn(false);
+     localStorage.removeItem('ams_is_logged_in'); localStorage.removeItem('ams_logged_in_user_id');
     sessionStorage.removeItem('ams_is_logged_in'); sessionStorage.removeItem('ams_logged_in_user_id');
   };
   
@@ -233,6 +248,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const liveSignedUrl = await uploadToHostinger(base64Signed, req.pdfFileName, req.category);
       const nextStepIndex = idx + 1;
       const isCompleted = nextStepIndex >= req.flow.length;
+      
       const updatedFlow = req.flow.map((step, i) => {
         if (i === idx) return { ...step, status: 'approved' as const, signedAt: new Date().toISOString(), signatureUrl: sig };
         if (i === nextStepIndex) return { ...step, status: 'waiting' as const };
@@ -253,7 +269,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         sendWaNotification({ type: 'forwarded', reqId: requestId, title: req.title, senderName: currentUser.name, targetUserId: updatedFlow[nextStepIndex].userId });
       }
-
       return { success: true, message: isCompleted ? 'Selesai.' : 'Diteruskan.' };
     } catch (err: any) { return { success: false, message: err?.message }; }
   };
@@ -262,12 +277,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const req = requests.find(r => r.id === requestId);
     if (!req) return;
     const updatedFlow = [...req.flow]; updatedFlow[req.currentStepIndex].status = 'needs_revision';
+    
     const newHistoryItem: RevisionHistoryItem = {
       id: `rev_${Date.now()}`, createdAt: new Date().toISOString(), requestedByUserId: currentUser.id, requestedByUserName: currentUser.name, requestedByUserRole: currentUser.role, pageReviews: pageReviews || [], generalNote: generalNote || 'Revisi diperlukan'
     };
+    
     const updatedReq = {
       ...req, status: 'needs_revision', notes: generalNote || 'Perbaikan diminta oleh ' + currentUser.name, lastRevisionRequestedBy: currentUser.name, flow: updatedFlow, revisionHistory: [...(req.revisionHistory || []), newHistoryItem]
     };
+    
     setRequests(prev => prev.map(r => r.id === requestId ? updatedReq as ApprovalRequest : r));
     await saveRequestToDb('update', updatedReq as ApprovalRequest, { actor_name: currentUser.name, action: 'Needs Revision', note: generalNote || 'Dokumen butuh revisi' });
     
@@ -314,12 +332,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     let updatedFlow = [...reqToUpdate.flow];
     let newStepIndex = reqToUpdate.currentStepIndex;
+    
     if (newPdfDataUrl) {
       updatedFlow = updatedFlow.map((step, idx) => ({ ...step, status: idx === 0 ? 'waiting' : 'pending', signedAt: undefined, signatureUrl: undefined }));
       newStepIndex = 0;
     } else {
       updatedFlow[reqToUpdate.currentStepIndex].status = 'waiting';
     }
+    
     if (updatedHistory.length > 0) {
       updatedHistory[updatedHistory.length - 1].resolvedAt = new Date().toISOString();
       updatedHistory[updatedHistory.length - 1].resolvedByRequesterName = currentUser.name;
@@ -344,7 +364,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const rejectPRToMega = () => {};
 
   return (
-    <AppContext.Provider value={{ activeTab, setActiveTab, users, currentUser, setCurrentUser, isLoggedIn, login, logout, requests, saveSignature, createNewRequest, performAutoSignApproval, uploadPRAndForward, uploadPOAndComplete, rejectPRToMega, requestRevision, rejectRequest, notification, showToast, selectedRequestForDetail, setSelectedRequestForDetail, fullScreenPreviewRequest, setFullScreenPreviewRequest, addAuditNote, submitRevisionByRequester }}>
+    <AppContext.Provider value={{ activeTab, setActiveTab, users, currentUser, setCurrentUser, isLoggedIn, login, logout, requests, saveSignature, createNewRequest, performAutoSignApproval, uploadPRAndForward, uploadPOAndComplete, rejectPRToMega, requestRevision, rejectRequest, notification, showToast, selectedRequestForDetail, setSelectedRequestForDetail, fullScreenPreviewRequest, setFullScreenPreviewRequest, addAuditNote, submitRevisionByRequester, hasPrivilege }}>
       {children}
       {uploadTask && (
         <div className="fixed bottom-6 right-6 z-50 bg-neutral-900 text-white p-4 rounded-xl shadow-2xl w-80 animate-in slide-in-from-bottom-5">
