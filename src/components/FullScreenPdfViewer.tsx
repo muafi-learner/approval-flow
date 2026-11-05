@@ -2,24 +2,37 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ApprovalRequest } from '../types';
 import { SignatureModal } from './SignatureModal';
-import { X, FileDown, AlertTriangle, RefreshCw, DownloadCloud, MessageSquare } from 'lucide-react';
+import { 
+  X, FileDown, AlertTriangle, RefreshCw, DownloadCloud, MessageSquare, Check 
+} from 'lucide-react';
 
 export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: () => void}> = ({ request, onClose }) => {
   const { currentUser, addAuditNote, performAutoSignApproval, requestRevision, showToast } = useApp();
   const [activeDocType, setActiveDocType] = useState<'WO' | 'PR' | 'PO'>('WO');
   const [activeUrl, setActiveUrl] = useState<string>(request.pdfDataUrl);
+  
   const [blobUrl, setBlobUrl] = useState('');
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [downloadError, setDownloadError] = useState<boolean>(false);
   const [retryTrigger, setRetryTrigger] = useState<number>(0);
+  const [isMobileWebView, setIsMobileWebView] = useState(false);
   
   const [selectedNotePage, setSelectedNotePage] = useState<number>(1);
   const [newNoteText, setNewNoteText] = useState('');
   const [isSigning, setIsSigning] = useState(false);
   const [showForceSignatureModal, setShowForceSignatureModal] = useState(false);
   
-  // STATE BARU: Untuk mengontrol Sidebar Catatan di mode Mobile
   const [showMobileNotes, setShowMobileNotes] = useState(false);
+
+  // Deteksi Mobile Browser
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobileWebView(window.innerWidth < 768 || /Mobi|Android/i.test(navigator.userAgent));
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     if (request.category === 'WO Existing') {
@@ -113,6 +126,9 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
     onClose();
   };
 
+  // Trik Google Docs Viewer untuk me-render PDF dari URL publik di browser Mobile
+  const googleDocsViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(activeUrl)}&embedded=true`;
+
   return (
     <>
       <div className="fixed inset-0 z-50 bg-neutral-100 flex flex-col animate-in fade-in duration-150">
@@ -142,9 +158,14 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
         <div className="flex-1 flex overflow-hidden relative">
           
           {/* AREA PDF VIEWER */}
-          <main className="flex-1 bg-neutral-200/60 relative p-0 pb-20 md:pb-0">
+          <main className="flex-1 bg-neutral-200/60 relative p-0 pb-[72px] md:pb-0">
             {blobUrl ? (
-              <iframe src={`${blobUrl}#toolbar=0&navpanes=0`} className="w-full h-full border-none bg-white block animate-in fade-in" title="PDF Viewer" />
+              // Jika terdeteksi dibuka di Mobile Browser, paksa lewat GDocs Viewer agar tidak terblokir jadi abu-abu
+              isMobileWebView && !activeUrl.startsWith('data:') ? (
+                <iframe src={googleDocsViewerUrl} className="w-full h-full border-none bg-white block animate-in fade-in" title="PDF Viewer" />
+              ) : (
+                <iframe src={`${blobUrl}#toolbar=0&navpanes=0`} className="w-full h-full border-none bg-white block animate-in fade-in" title="PDF Viewer" />
+              )
             ) : downloadError ? (
               <div className="flex flex-col h-full items-center justify-center bg-white animate-in zoom-in-95 duration-200 p-6">
                 <div className="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mb-5 border border-rose-100">
@@ -152,7 +173,7 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
                 </div>
                 <h3 className="text-lg font-bold text-neutral-900 mb-2 text-center">Koneksi Terputus Saat Memuat Dokumen</h3>
                 <p className="text-sm text-neutral-600 max-w-md text-center mb-8 leading-relaxed">
-                  Dokumen ini berukuran cukup besar. Proses pratinjau terhenti karena jaringan tidak stabil atau interupsi VPN di tengah jalan.
+                  Dokumen ini berukuran cukup besar. Proses pratinjau terhenti karena jaringan tidak stabil.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md mb-6">
                   <button onClick={() => setRetryTrigger(prev => prev + 1)} className="flex-1 py-3 bg-[#0B1A28] hover:bg-[#152D40] text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm">
@@ -176,7 +197,6 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
           </main>
 
           {/* AREA SIDEBAR / BOTTOM SHEET (MOBILE RESPONSIVE) */}
-          {/* Di Desktop selalu tampil. Di Mobile tampil sebagai overlay bottom sheet saat diklik */}
           <aside 
             className={`bg-white flex flex-col shrink-0 z-40 transition-all duration-300 
               ${showMobileNotes 
@@ -188,7 +208,6 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
               <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">Catatan Dokumen</h3>
               <div className="flex items-center gap-3">
                 <span className="text-[10px] font-medium text-neutral-400">{allAuditNotes.length} Catatan</span>
-                {/* Tombol Tutup Khusus Mobile */}
                 <button onClick={() => setShowMobileNotes(false)} className="md:hidden p-1.5 bg-neutral-100 text-neutral-600 rounded-full hover:bg-neutral-200">
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -243,17 +262,17 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
 
         </div>
 
-        {/* FLOATING ACTION BUTTON (Hanya Tampil di Mobile saat Sidebar Tertutup) */}
+        {/* BOTTOM ACTION BAR RATA (FLAT) - Hanya Tampil di Mobile saat Sidebar Tertutup */}
         {!showMobileNotes && (
-          <div className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-30 animate-in slide-in-from-bottom-10">
+          <div className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-neutral-200 p-4 z-30 flex items-center justify-center">
             <button 
               onClick={() => setShowMobileNotes(true)}
-              className="flex items-center gap-2 px-6 py-3.5 bg-[#0B1A28] text-white rounded-full shadow-2xl font-semibold text-sm hover:scale-105 active:scale-95 transition-transform"
+              className="w-full max-w-sm flex items-center justify-center gap-2 px-6 py-3.5 bg-[#0B1A28] text-white rounded-xl shadow-sm font-semibold text-sm transition-colors active:bg-[#152D40] relative"
             >
               <MessageSquare className="w-4 h-4" />
               <span>Lihat Catatan ({allAuditNotes.length})</span>
               {isCurrentUserWaiting && (
-                <span className="flex w-2 h-2 rounded-full bg-rose-500 absolute top-2 right-4 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.8)]" />
+                <span className="flex w-2.5 h-2.5 rounded-full bg-rose-500 absolute top-0 right-0 -mt-1 -mr-1 animate-pulse border-2 border-white" />
               )}
             </button>
           </div>
