@@ -1,21 +1,68 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { ApprovalRequest } from '../types';
 import { SignatureModal } from './SignatureModal';
 import { 
-  X, FileDown, AlertTriangle, RefreshCw, DownloadCloud, MessageSquare, Check 
+  X, FileDown, AlertTriangle, RefreshCw, DownloadCloud, 
+  MessageSquare, ZoomIn, ZoomOut 
 } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Menggunakan unpkg CDN karena lebih ramah CORS di Mobile
+try {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+} catch (e) {
+  console.warn('pdfjs worker initialization note:', e);
+}
+
+// Komponen Render Canvas Per-Halaman (Sangat ringan untuk Mobile)
+const PdfPageRenderer: React.FC<{ pdf: any; pageNumber: number; scale: number }> = ({ pdf, pageNumber, scale }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  useEffect(() => {
+    let renderTask: any;
+    let isMounted = true;
+    
+    pdf.getPage(pageNumber).then((page: any) => {
+      if (!isMounted) return;
+      
+      const viewport = page.getViewport({ scale: scale }); 
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      
+      const context = canvas.getContext('2d');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      
+      renderTask = page.render({ canvasContext: context, viewport });
+    }).catch(() => {});
+    
+    return () => {
+      isMounted = false;
+      if (renderTask) renderTask.cancel();
+    };
+  }, [pdf, pageNumber, scale]);
+  
+  return (
+    <canvas 
+      ref={canvasRef} 
+      className="max-w-full h-auto mb-4 shadow-md bg-white rounded-sm" 
+    />
+  );
+};
 
 export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: () => void}> = ({ request, onClose }) => {
   const { currentUser, addAuditNote, performAutoSignApproval, requestRevision, showToast } = useApp();
   const [activeDocType, setActiveDocType] = useState<'WO' | 'PR' | 'PO'>('WO');
   const [activeUrl, setActiveUrl] = useState<string>(request.pdfDataUrl);
   
-  const [blobUrl, setBlobUrl] = useState('');
+  const [pdfDocObj, setPdfDocObj] = useState<any>(null);
+  
+  // Deteksi jika HP, default zoom disesuaikan agar pas di layar kecil
+  const [zoomScale, setZoomScale] = useState(window.innerWidth < 768 ? 0.8 : 1.2); 
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [downloadError, setDownloadError] = useState<boolean>(false);
   const [retryTrigger, setRetryTrigger] = useState<number>(0);
-  const [isMobileWebView, setIsMobileWebView] = useState(false);
   
   const [selectedNotePage, setSelectedNotePage] = useState<number>(1);
   const [newNoteText, setNewNoteText] = useState('');
@@ -23,16 +70,6 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
   const [showForceSignatureModal, setShowForceSignatureModal] = useState(false);
   
   const [showMobileNotes, setShowMobileNotes] = useState(false);
-
-  // Deteksi Mobile Browser
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobileWebView(window.innerWidth < 768 || /Mobi|Android/i.test(navigator.userAgent));
-    };
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
 
   useEffect(() => {
     if (request.category === 'WO Existing') {
@@ -45,52 +82,63 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
   useEffect(() => {
     if (!activeUrl) return;
     let isCancelled = false;
-    let objectUrl = '';
+    let loadingTask: any = null;
     
-    const loadBlobWithProgress = () => {
+    const loadPdfWithPdfJs = () => {
       setDownloadProgress(0);
       setDownloadError(false);
-      setBlobUrl('');
+      setPdfDocObj(null);
       
-      if (activeUrl.startsWith('data:')) {
-        setDownloadProgress(100);
-        setTimeout(() => { if(!isCancelled) setBlobUrl(activeUrl); }, 300);
-        return;
-      }
-      
-      const fetchUrl = activeUrl.includes('?') ? `${activeUrl}&t=${Date.now()}` : `${activeUrl}?t=${Date.now()}`;
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', fetchUrl);
-      xhr.responseType = 'blob';
-      
-      xhr.onprogress = (e) => {
-        if (e.lengthComputable && !isCancelled) {
-          const percent = Math.round((e.loaded / e.total) * 100);
-          setDownloadProgress(percent);
+      try {
+        if (activeUrl.startsWith('data:')) {
+          setDownloadProgress(100);
+          setTimeout(() => { 
+            if(!isCancelled) {
+              const base64Data = activeUrl.split(',')[1];
+              const binaryString = atob(base64Data);
+              const pdfBytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) pdfBytes[i] = binaryString.charCodeAt(i);
+              
+              // PERBAIKAN: Menggunakan format objek { data: ... }
+              pdfjsLib.getDocument({ data: pdfBytes }).promise.then(doc => {
+                if(!isCancelled) setPdfDocObj(doc);
+              }).catch(() => { if (!isCancelled) setDownloadError(true); });
+            }
+          }, 300);
+          return;
         }
-      };
-      
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300 && !isCancelled) {
-          objectUrl = URL.createObjectURL(xhr.response);
-          setBlobUrl(objectUrl);
-        } else {
+
+        const fetchUrl = activeUrl.includes('?') ? `${activeUrl}&t=${Date.now()}` : `${activeUrl}?t=${Date.now()}`;
+        
+        // PERBAIKAN: Menggunakan format objek { url: ... } sesuai aturan ketat PDF.js versi ini
+        loadingTask = pdfjsLib.getDocument({ url: fetchUrl });
+        
+        loadingTask.onProgress = (progressData: any) => {
+          if (progressData.total && !isCancelled) {
+            const percent = Math.round((progressData.loaded / progressData.total) * 100);
+            setDownloadProgress(percent);
+          }
+        };
+
+        loadingTask.promise.then((doc: any) => {
+          if(!isCancelled) setPdfDocObj(doc);
+        }).catch((err: any) => {
+          console.error('PDF.js Load Error:', err);
           if (!isCancelled) setDownloadError(true);
-        }
-      };
-      
-      xhr.onerror = () => {
+        });
+
+      } catch (error) {
         if (!isCancelled) setDownloadError(true);
-      };
-      
-      xhr.send();
+      }
     };
     
-    loadBlobWithProgress();
+    loadPdfWithPdfJs();
     
     return () => {
       isCancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (loadingTask && loadingTask.destroy) {
+        loadingTask.destroy();
+      }
     };
   }, [activeUrl, retryTrigger]);
 
@@ -126,9 +174,6 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
     onClose();
   };
 
-  // Trik Google Docs Viewer untuk me-render PDF dari URL publik di browser Mobile
-  const googleDocsViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(activeUrl)}&embedded=true`;
-
   return (
     <>
       <div className="fixed inset-0 z-50 bg-neutral-100 flex flex-col animate-in fade-in duration-150">
@@ -157,51 +202,61 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
 
         <div className="flex-1 flex overflow-hidden relative">
           
-          {/* AREA PDF VIEWER */}
-          <main className="flex-1 bg-neutral-200/60 relative p-0 pb-[72px] md:pb-0">
-            {blobUrl ? (
-              // Jika terdeteksi dibuka di Mobile Browser, paksa lewat GDocs Viewer agar tidak terblokir jadi abu-abu
-              isMobileWebView && !activeUrl.startsWith('data:') ? (
-                <iframe src={googleDocsViewerUrl} className="w-full h-full border-none bg-white block animate-in fade-in" title="PDF Viewer" />
-              ) : (
-                <iframe src={`${blobUrl}#toolbar=0&navpanes=0`} className="w-full h-full border-none bg-white block animate-in fade-in" title="PDF Viewer" />
-              )
-            ) : downloadError ? (
-              <div className="flex flex-col h-full items-center justify-center bg-white animate-in zoom-in-95 duration-200 p-6">
-                <div className="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mb-5 border border-rose-100">
-                  <AlertTriangle className="w-8 h-8 text-rose-500" />
+          {/* AREA KIRI: PDF VIEWER CANVAS NATIVE */}
+          <main className="flex-1 bg-[#323639] relative flex flex-col">
+            {pdfDocObj ? (
+              <div className="flex-1 relative flex flex-col overflow-hidden">
+                
+                {/* KONTROL ZOOM KUSTOM */}
+                <div className="absolute top-4 right-4 z-10 flex items-center justify-between px-3 py-1.5 bg-[#0B1A28]/80 backdrop-blur-md rounded-full w-32 shadow-[0_4px_12px_rgba(0,0,0,0.15)] border border-white/10">
+                  <button onClick={() => setZoomScale(s => Math.max(0.4, s - 0.2))} className="p-1 text-white/80 hover:text-white transition-colors active:scale-95"><ZoomOut className="w-4 h-4"/></button>
+                  <span className="text-[11px] font-bold text-white tracking-wide">{Math.round(zoomScale * 100)}%</span>
+                  <button onClick={() => setZoomScale(s => Math.min(3.0, s + 0.2))} className="p-1 text-white/80 hover:text-white transition-colors active:scale-95"><ZoomIn className="w-4 h-4"/></button>
                 </div>
-                <h3 className="text-lg font-bold text-neutral-900 mb-2 text-center">Koneksi Terputus Saat Memuat Dokumen</h3>
-                <p className="text-sm text-neutral-600 max-w-md text-center mb-8 leading-relaxed">
+
+                {/* Kontainer Scroll untuk Canvas PDF */}
+                <div className="flex-1 overflow-auto p-4 sm:p-8 flex flex-col items-center">
+                  {Array.from({ length: pdfDocObj.numPages }, (_, i) => (
+                    <PdfPageRenderer key={i} pdf={pdfDocObj} pageNumber={i + 1} scale={zoomScale} />
+                  ))}
+                </div>
+              </div>
+            ) : downloadError ? (
+              <div className="flex flex-col h-full items-center justify-center bg-[#323639] animate-in zoom-in-95 duration-200 p-6">
+                <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mb-5 border border-rose-500/20">
+                  <AlertTriangle className="w-8 h-8 text-rose-400" />
+                </div>
+                <h3 className="text-lg font-bold text-white mb-2 text-center">Koneksi Terputus Saat Memuat Dokumen</h3>
+                <p className="text-sm text-neutral-400 max-w-md text-center mb-8 leading-relaxed">
                   Dokumen ini berukuran cukup besar. Proses pratinjau terhenti karena jaringan tidak stabil.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md mb-6">
                   <button onClick={() => setRetryTrigger(prev => prev + 1)} className="flex-1 py-3 bg-[#0B1A28] hover:bg-[#152D40] text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm">
                     <RefreshCw className="w-4 h-4" /> Coba Muat Ulang
                   </button>
-                  <a href={activeUrl} download target="_blank" rel="noreferrer" className="flex-1 py-3 bg-white hover:bg-neutral-50 text-neutral-700 border border-neutral-200 text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm">
+                  <a href={activeUrl} download target="_blank" rel="noreferrer" className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/20 text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm">
                     <DownloadCloud className="w-4 h-4" /> Unduh Langsung
                   </a>
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col h-full items-center justify-center bg-white animate-in fade-in duration-300">
-                <FileDown className="w-14 h-14 text-neutral-300 mb-6" strokeWidth={1.5} />
-                <h2 className="text-xl font-bold text-neutral-900 mb-5 tracking-tight">Mengunduh Dokumen...</h2>
-                <div className="w-64 bg-neutral-100 rounded-full h-2.5 overflow-hidden mb-4">
+              <div className="flex flex-col h-full items-center justify-center bg-[#323639] animate-in fade-in duration-300">
+                <FileDown className="w-14 h-14 text-neutral-500 mb-6" strokeWidth={1.5} />
+                <h2 className="text-xl font-bold text-white mb-5 tracking-tight">Mengunduh Dokumen...</h2>
+                <div className="w-64 bg-neutral-700 rounded-full h-2.5 overflow-hidden mb-4">
                   <div className="bg-[#0B1A28] h-full rounded-full transition-all duration-300 ease-out" style={{ width: `${downloadProgress}%` }} />
                 </div>
-                <div className="text-sm font-semibold text-neutral-500">{downloadProgress}%</div>
+                <div className="text-sm font-semibold text-neutral-400">{downloadProgress}%</div>
               </div>
             )}
           </main>
 
-          {/* AREA SIDEBAR / BOTTOM SHEET (MOBILE RESPONSIVE) */}
+          {/* AREA KANAN / BOTTOM SHEET: SIDEBAR CATATAN */}
           <aside 
             className={`bg-white flex flex-col shrink-0 z-40 transition-all duration-300 
               ${showMobileNotes 
                 ? 'fixed inset-x-0 bottom-0 top-14 rounded-t-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)]' 
-                : 'hidden md:flex md:w-80 md:border-l md:border-neutral-100'}
+                : 'hidden md:flex md:w-80 md:border-l md:border-neutral-200'}
             `}
           >
             <div className="pt-6 px-6 pb-4 flex items-center justify-between border-b border-neutral-100">
@@ -259,12 +314,11 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
               </div>
             )}
           </aside>
-
         </div>
 
-        {/* BOTTOM ACTION BAR RATA (FLAT) - Hanya Tampil di Mobile saat Sidebar Tertutup */}
+        {/* BOTTOM ACTION BAR RATA (FLAT) */}
         {!showMobileNotes && (
-          <div className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-neutral-200 p-4 z-30 flex items-center justify-center">
+          <div className="md:hidden bg-white border-t border-neutral-200 p-3 shrink-0 flex items-center justify-center">
             <button 
               onClick={() => setShowMobileNotes(true)}
               className="w-full max-w-sm flex items-center justify-center gap-2 px-6 py-3.5 bg-[#0B1A28] text-white rounded-xl shadow-sm font-semibold text-sm transition-colors active:bg-[#152D40] relative"
