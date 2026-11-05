@@ -4,18 +4,16 @@ import { ApprovalRequest } from '../types';
 import { SignatureModal } from './SignatureModal';
 import { 
   X, FileDown, AlertTriangle, RefreshCw, DownloadCloud, 
-  MessageSquare, ZoomIn, ZoomOut 
+  MessageSquare 
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Menggunakan unpkg CDN karena lebih ramah CORS di Mobile
 try {
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 } catch (e) {
   console.warn('pdfjs worker initialization note:', e);
 }
 
-// Komponen Render Canvas Per-Halaman (Sangat ringan untuk Mobile)
 const PdfPageRenderer: React.FC<{ pdf: any; pageNumber: number; scale: number }> = ({ pdf, pageNumber, scale }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -46,7 +44,7 @@ const PdfPageRenderer: React.FC<{ pdf: any; pageNumber: number; scale: number }>
   return (
     <canvas 
       ref={canvasRef} 
-      className="max-w-full h-auto mb-4 shadow-md bg-white rounded-sm" 
+      className="w-full max-w-full h-auto mb-4 shadow-md bg-white rounded-sm" 
     />
   );
 };
@@ -58,8 +56,9 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
   
   const [pdfDocObj, setPdfDocObj] = useState<any>(null);
   
-  // Deteksi jika HP, default zoom disesuaikan agar pas di layar kecil
-  const [zoomScale, setZoomScale] = useState(window.innerWidth < 768 ? 0.8 : 1.2); 
+  const [qualityMode, setQualityMode] = useState<'SD' | 'HD'>('SD');
+  const renderScale = qualityMode === 'HD' ? 3.0 : 1.0;
+
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [downloadError, setDownloadError] = useState<boolean>(false);
   const [retryTrigger, setRetryTrigger] = useState<number>(0);
@@ -88,6 +87,7 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
       setDownloadProgress(0);
       setDownloadError(false);
       setPdfDocObj(null);
+      setQualityMode('SD');
       
       try {
         if (activeUrl.startsWith('data:')) {
@@ -99,7 +99,6 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
               const pdfBytes = new Uint8Array(binaryString.length);
               for (let i = 0; i < binaryString.length; i++) pdfBytes[i] = binaryString.charCodeAt(i);
               
-              // PERBAIKAN: Menggunakan format objek { data: ... }
               pdfjsLib.getDocument({ data: pdfBytes }).promise.then(doc => {
                 if(!isCancelled) setPdfDocObj(doc);
               }).catch(() => { if (!isCancelled) setDownloadError(true); });
@@ -110,7 +109,6 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
 
         const fetchUrl = activeUrl.includes('?') ? `${activeUrl}&t=${Date.now()}` : `${activeUrl}?t=${Date.now()}`;
         
-        // PERBAIKAN: Menggunakan format objek { url: ... } sesuai aturan ketat PDF.js versi ini
         loadingTask = pdfjsLib.getDocument({ url: fetchUrl });
         
         loadingTask.onProgress = (progressData: any) => {
@@ -178,7 +176,7 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
     <>
       <div className="fixed inset-0 z-50 bg-neutral-100 flex flex-col animate-in fade-in duration-150">
         
-        {/* HEADER VIEWER */}
+        {/* HEADER VIEWER: GAYA TEKS BERSIH TANPA BOX/EMOJI */}
         <header className="h-14 px-4 sm:px-6 bg-white border-b border-neutral-200 flex items-center justify-between shrink-0 z-20">
           <div className="flex items-center gap-3 sm:gap-5 overflow-x-auto hide-scrollbar">
             <button onClick={() => {setActiveDocType('WO'); setActiveUrl(request.pdfDataUrl);}} className={`whitespace-nowrap text-xs font-medium transition-colors ${activeDocType === 'WO' ? 'text-neutral-900 font-bold' : 'text-neutral-400 hover:text-neutral-900'}`}>
@@ -195,9 +193,25 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
               </button>
             )}
           </div>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-900 transition-colors p-1 shrink-0 ml-2">
-            <X className="w-5 h-5" />
-          </button>
+
+          {/* KANAN: TOMBOL SD/HD TANPA BOX & TOMBOL TUTUP */}
+          <div className="flex items-center gap-4 shrink-0 ml-3">
+            {pdfDocObj && (
+              <button 
+                onClick={() => setQualityMode(prev => prev === 'SD' ? 'HD' : 'SD')}
+                className={`text-xs font-medium transition-colors ${
+                  qualityMode === 'HD' 
+                    ? 'text-neutral-900 font-bold' 
+                    : 'text-neutral-400 hover:text-neutral-900'
+                }`}
+              >
+                {qualityMode}
+              </button>
+            )}
+            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-900 transition-colors p-1">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </header>
 
         <div className="flex-1 flex overflow-hidden relative">
@@ -206,18 +220,9 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
           <main className="flex-1 bg-[#323639] relative flex flex-col">
             {pdfDocObj ? (
               <div className="flex-1 relative flex flex-col overflow-hidden">
-                
-                {/* KONTROL ZOOM KUSTOM */}
-                <div className="absolute top-4 right-4 z-10 flex items-center justify-between px-3 py-1.5 bg-[#0B1A28]/80 backdrop-blur-md rounded-full w-32 shadow-[0_4px_12px_rgba(0,0,0,0.15)] border border-white/10">
-                  <button onClick={() => setZoomScale(s => Math.max(0.4, s - 0.2))} className="p-1 text-white/80 hover:text-white transition-colors active:scale-95"><ZoomOut className="w-4 h-4"/></button>
-                  <span className="text-[11px] font-bold text-white tracking-wide">{Math.round(zoomScale * 100)}%</span>
-                  <button onClick={() => setZoomScale(s => Math.min(3.0, s + 0.2))} className="p-1 text-white/80 hover:text-white transition-colors active:scale-95"><ZoomIn className="w-4 h-4"/></button>
-                </div>
-
-                {/* Kontainer Scroll untuk Canvas PDF */}
                 <div className="flex-1 overflow-auto p-4 sm:p-8 flex flex-col items-center">
                   {Array.from({ length: pdfDocObj.numPages }, (_, i) => (
-                    <PdfPageRenderer key={i} pdf={pdfDocObj} pageNumber={i + 1} scale={zoomScale} />
+                    <PdfPageRenderer key={`${i}-${qualityMode}`} pdf={pdfDocObj} pageNumber={i + 1} scale={renderScale} />
                   ))}
                 </div>
               </div>
@@ -318,7 +323,7 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
 
         {/* BOTTOM ACTION BAR RATA (FLAT) */}
         {!showMobileNotes && (
-          <div className="md:hidden bg-white border-t border-neutral-200 p-3 shrink-0 flex items-center justify-center">
+          <div className="md:hidden bg-white border-t border-neutral-200 p-3 shrink-0 flex items-center justify-center z-40 relative">
             <button 
               onClick={() => setShowMobileNotes(true)}
               className="w-full max-w-sm flex items-center justify-center gap-2 px-6 py-3.5 bg-[#0B1A28] text-white rounded-xl shadow-sm font-semibold text-sm transition-colors active:bg-[#152D40] relative"
