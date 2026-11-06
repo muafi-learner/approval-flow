@@ -12,8 +12,7 @@ export const TrackingView: React.FC = () => {
     submitRevisionByRequester, currentUser, showToast, 
     setActiveTab, setFullScreenPreviewRequest, hasPrivilege 
   } = useApp();
-
-  // Tambahkan filter 'related' ke state
+  
   const [filter, setFilter] = useState<'all' | 'in_progress' | 'needs_revision' | 'completed' | 'rejected' | 'related'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -22,15 +21,14 @@ export const TrackingView: React.FC = () => {
   const [newPdfFile, setNewPdfFile] = useState<{ name: string; dataUrl: string } | null>(null);
   const [revisionMode, setRevisionMode] = useState<'wording_only' | 'with_file'>('wording_only');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
   const [detailActiveDocType, setDetailActiveDocType] = useState<'WO' | 'PR' | 'PO'>('WO');
   const [detailBlobUrl, setDetailBlobUrl] = useState('');
 
-  // 1. Dokumen yang dibuat oleh user saat ini
   const myRequests = requests.filter(req => {
     return req.requesterId === currentUser?.id || req.requesterName.toLowerCase() === currentUser?.name.toLowerCase();
   });
 
-  // 2. Dokumen di mana user saat ini menjadi approver (berkontribusi) atau punya Hak Istimewa (Janet dkk)
   const relatedRequests = requests.filter(req => {
     const isApprover = req.flow.some(step => step.userId === currentUser.id);
     const hasSpecialAccess = hasPrivilege(req.category);
@@ -39,7 +37,6 @@ export const TrackingView: React.FC = () => {
 
   const filteredRequests = (filter === 'related' ? relatedRequests : myRequests).filter(req => {
     if (filter !== 'all' && filter !== 'related' && req.status !== filter) return false;
-    
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       return req.title.toLowerCase().includes(q) || req.id.toLowerCase().includes(q);
@@ -49,21 +46,21 @@ export const TrackingView: React.FC = () => {
 
   const getStepIcon = (status: ApproverStep['status']) => {
     switch (status) {
-      case 'approved': return <CheckCircle2 className="w-4 h-4 text-emerald-600" />;
-      case 'waiting': return <Clock className="w-4 h-4 text-neutral-400 animate-pulse" />;
-      case 'needs_revision': return <RotateCcw className="w-4 h-4 text-amber-600" />;
-      case 'rejected': return <XCircle className="w-4 h-4 text-rose-600" />;
-      default: return <CircleDashed className="w-4 h-4 text-neutral-300" />;
+      case 'approved': return <CheckCircle2 className="w-3.5 h-3.5 md:w-4 md:h-4 text-emerald-600" />;
+      case 'waiting': return <Clock className="w-3.5 h-3.5 md:w-4 md:h-4 text-neutral-400 animate-pulse" />;
+      case 'needs_revision': return <RotateCcw className="w-3.5 h-3.5 md:w-4 md:h-4 text-amber-600" />;
+      case 'rejected': return <XCircle className="w-3.5 h-3.5 md:w-4 md:h-4 text-rose-600" />;
+      default: return <CircleDashed className="w-3.5 h-3.5 md:w-4 md:h-4 text-neutral-300" />;
     }
   };
 
   const getStepBadge = (step: ApproverStep) => {
     switch (step.status) {
-      case 'approved': return <span className="text-[10px] text-emerald-700 font-medium">Disetujui</span>;
-      case 'waiting': return <span className="text-[10px] text-neutral-600 font-medium bg-neutral-100 px-1.5 py-0.5 rounded">Menunggu</span>;
-      case 'needs_revision': return <span className="text-[10px] text-amber-700 font-medium bg-amber-50 px-1.5 py-0.5 rounded">Revisi</span>;
-      case 'rejected': return <span className="text-[10px] text-rose-700 font-medium">Ditolak</span>;
-      default: return <span className="text-[10px] text-neutral-400">Menunggu</span>;
+      case 'approved': return <span className="text-[9px] md:text-[10px] text-emerald-700 font-medium">Disetujui</span>;
+      case 'waiting': return <span className="text-[9px] md:text-[10px] text-neutral-600 font-medium bg-neutral-100 px-1.5 py-0.5 rounded">Menunggu</span>;
+      case 'needs_revision': return <span className="text-[9px] md:text-[10px] text-amber-700 font-medium bg-amber-50 px-1.5 py-0.5 rounded">Revisi</span>;
+      case 'rejected': return <span className="text-[9px] md:text-[10px] text-rose-700 font-medium">Ditolak</span>;
+      default: return <span className="text-[9px] md:text-[10px] text-neutral-400">Menunggu</span>;
     }
   };
 
@@ -127,8 +124,8 @@ export const TrackingView: React.FC = () => {
     const loadBlobAsync = async () => {
       try {
         const fetchUrl = rawDetailUrl.startsWith('data:')
-           ? rawDetailUrl
-           : (rawDetailUrl.includes('?') ? `${rawDetailUrl}&t=${Date.now()}` : `${rawDetailUrl}?t=${Date.now()}`);
+          ? rawDetailUrl
+          : (rawDetailUrl.includes('?') ? `${rawDetailUrl}&t=${Date.now()}` : `${rawDetailUrl}?t=${Date.now()}`);
         
         const res = await fetch(fetchUrl);
         const blob = await res.blob();
@@ -155,70 +152,72 @@ export const TrackingView: React.FC = () => {
   const showNotesSection = hasRevisionHistory || hasAuditNotes;
 
   return (
-    <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6">
+    <div className="max-w-5xl mx-auto py-6 px-4 md:py-8 md:px-6">
       
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 md:mb-8">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-neutral-900">
+          <div className="flex items-center gap-2.5 md:gap-3">
+            <h1 className="text-xl md:text-2xl font-bold text-neutral-900 tracking-tight">
               {filter === 'related' ? 'Dokumen Terkait' : 'Status Pengajuan'}
             </h1>
-            <span className="px-2.5 py-0.5 text-[11px] font-medium bg-neutral-100 text-neutral-600 rounded">
+            <span className="px-2 py-0.5 text-[10px] md:text-[11px] font-semibold bg-neutral-100 text-neutral-600 rounded">
               {filter === 'related' ? relatedRequests.length : myRequests.length} Total
             </span>
           </div>
-          <p className="mt-1 text-sm text-neutral-500">
-            {filter === 'related' 
-              ? 'Lacak dokumen di mana Anda berkontribusi sebagai approver atau memiliki akses khusus.' 
+          <p className="mt-1 text-xs md:text-sm text-neutral-500 max-w-sm">
+            {filter === 'related'
+              ? 'Lacak dokumen di mana Anda berkontribusi sebagai approver atau memiliki akses khusus.'
               : 'Lacak dokumen dan progres persetujuan yang Anda ajukan.'}
           </p>
         </div>
-        
-        {/* FILTER BARU: TERKAIT */}
-        <div className="flex flex-wrap items-center gap-1 p-1 bg-neutral-100/80 rounded-lg shrink-0 border border-neutral-200/50">
-          <button onClick={() => setFilter('all')} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${filter === 'all' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Semua</button>
-          <button onClick={() => setFilter('in_progress')} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${filter === 'in_progress' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Berjalan</button>
-          <button onClick={() => setFilter('needs_revision')} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${filter === 'needs_revision' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>
+
+        {/* FILTER BAR MINIMALIS */}
+        {/* FILTER BAR MINIMALIS: OPSI 2 (SEGMENTED CONTROL FULL WIDTH) */}
+        <div className="flex items-center w-full gap-0.5 p-1 bg-neutral-100/80 rounded-lg shrink-0 border border-neutral-200/50">
+          <button onClick={() => setFilter('all')} className={`flex-1 flex justify-center py-1.5 text-[10px] sm:text-[11px] font-semibold rounded-md transition-all ${filter === 'all' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Semua</button>
+          <button onClick={() => setFilter('in_progress')} className={`flex-1 flex justify-center py-1.5 text-[10px] sm:text-[11px] font-semibold rounded-md transition-all ${filter === 'in_progress' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Berjalan</button>
+          <button onClick={() => setFilter('needs_revision')} className={`flex-1 flex justify-center py-1.5 text-[10px] sm:text-[11px] font-semibold rounded-md transition-all items-center gap-1 ${filter === 'needs_revision' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>
             <span>Revisi</span>
-            {needsRevisionCount > 0 && <span className={`px-1.5 rounded-sm text-[10px] font-bold ${filter === 'needs_revision' ? 'bg-amber-100 text-amber-700' : 'bg-neutral-200 text-neutral-600'}`}>{needsRevisionCount}</span>}
           </button>
-          <button onClick={() => setFilter('completed')} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${filter === 'completed' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Selesai</button>
-          <span className="w-px h-4 bg-neutral-300 mx-1"></span>
-          <button onClick={() => setFilter('related')} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${filter === 'related' ? 'bg-[#0B1A28] text-white shadow-sm' : 'text-[#0B1A28] hover:bg-neutral-200'}`}>Terkait</button>
+          <button onClick={() => setFilter('completed')} className={`flex-1 flex justify-center py-1.5 text-[10px] sm:text-[11px] font-semibold rounded-md transition-all ${filter === 'completed' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Selesai</button>
+          
+          <span className="w-px h-3.5 bg-neutral-300 mx-0.5"></span>
+          
+          <button onClick={() => setFilter('related')} className={`flex-1 flex justify-center py-1.5 text-[10px] sm:text-[11px] font-semibold rounded-md transition-all ${filter === 'related' ? 'bg-[#0B1A28] text-white shadow-sm' : 'text-[#0B1A28] hover:bg-neutral-200'}`}>Terkait</button>
         </div>
       </div>
 
       {(myRequests.length > 0 || relatedRequests.length > 0) && (
-        <div className="mb-6">
-          <input 
-            type="text" 
-            value={searchQuery} 
-            onChange={e => setSearchQuery(e.target.value)} 
-            placeholder="Cari nomor ID atau judul dokumen..." 
-            className="w-full sm:max-w-sm px-3.5 py-2 text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B1A28]" 
+        <div className="mb-5 md:mb-6">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Cari nomor ID atau judul dokumen..."
+            className="w-full sm:max-w-sm px-3.5 py-2.5 text-xs md:text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B1A28]"
           />
         </div>
       )}
 
       {filteredRequests.length === 0 ? (
-        <div className="bg-white rounded-xl border border-neutral-200 p-12 text-center">
-          <div className="w-12 h-12 rounded-lg bg-neutral-50 border border-neutral-100 flex items-center justify-center mx-auto mb-4">
+        <div className="bg-white rounded-xl border border-neutral-200 p-8 md:p-12 text-center shadow-sm">
+          <div className="w-12 h-12 rounded-full bg-neutral-50 border border-neutral-100 flex items-center justify-center mx-auto mb-4">
             <FileText className="w-5 h-5 text-neutral-400" />
           </div>
-          <h3 className="text-base font-semibold text-neutral-900">Tidak Ditemukan</h3>
-          <p className="text-sm text-neutral-500 mt-1 max-w-sm mx-auto">
+          <h3 className="text-sm md:text-base font-bold text-neutral-900 mb-1">Tidak Ditemukan</h3>
+          <p className="text-xs md:text-sm text-neutral-500 max-w-sm mx-auto">
             Tidak ada dokumen yang cocok dengan filter atau pencarian Anda saat ini.
           </p>
           {filter !== 'related' && (
             <div className="mt-5">
-              <button onClick={() => setActiveTab('pengajuan')} className="px-4 py-2 text-sm font-medium bg-[#0B1A28] text-white rounded-lg hover:bg-[#152D40] transition-colors inline-flex items-center gap-1.5">
+              <button onClick={() => setActiveTab('pengajuan')} className="px-4 py-2.5 text-xs md:text-sm font-semibold bg-[#0B1A28] text-white rounded-lg hover:bg-[#152D40] transition-colors inline-flex items-center gap-1.5 shadow-sm">
                 <span>Buat Pengajuan Baru</span>
               </button>
             </div>
           )}
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3 md:space-y-4">
           {filteredRequests.map(req => {
             const currentApprover = req.flow[req.currentStepIndex];
             const isCompleted = req.status === 'completed';
@@ -226,35 +225,35 @@ export const TrackingView: React.FC = () => {
             const lastNote = (req.auditNotes || []).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
             
             return (
-              <div key={req.id} className={`bg-white rounded-xl border p-5 transition-all shadow-sm ${isNeedsRevision && filter !== 'related' ? 'border-neutral-200 border-l-4 border-l-amber-400' : 'border-neutral-200 hover:border-neutral-300'}`}>
+              <div key={req.id} className={`bg-white rounded-xl border p-4 md:p-5 transition-all shadow-sm ${isNeedsRevision && filter !== 'related' ? 'border-neutral-200 border-l-4 border-l-amber-400' : 'border-neutral-200 hover:border-neutral-300'}`}>
                 
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-4 border-b border-neutral-100">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-3 md:pb-4 border-b border-neutral-100">
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500 mb-1.5">
-                      <span className="font-mono text-neutral-600 font-medium">{req.id}</span>
+                    <div className="flex flex-wrap items-center gap-1.5 md:gap-2 text-[10px] md:text-xs text-neutral-500 mb-1">
+                      <span className="font-mono text-neutral-600 font-semibold bg-neutral-100 px-1.5 py-0.5 rounded">{req.id}</span>
                       <span className="text-neutral-300">•</span>
                       <span className="flex items-center gap-1">{new Date(req.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                       {filter === 'related' && (
                         <>
                           <span className="text-neutral-300">•</span>
-                          <span className="font-medium text-[#0B1A28]">Oleh {req.requesterName}</span>
+                          <span className="font-semibold text-[#0B1A28]">Oleh {req.requesterName}</span>
                         </>
                       )}
                     </div>
-                    <h2 className="text-base font-semibold text-neutral-900 truncate">{req.title}</h2>
+                    <h2 className="text-sm md:text-base font-bold text-neutral-900 truncate">{req.title}</h2>
                   </div>
                   
                   <div className="flex items-center gap-2 shrink-0">
                     {isCompleted ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 rounded">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] md:text-xs font-bold text-emerald-700 bg-emerald-50 rounded">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Selesai
                       </span>
                     ) : isNeedsRevision ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-amber-700 bg-amber-50 rounded">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] md:text-xs font-bold text-amber-700 bg-amber-50 rounded">
                         <RotateCcw className="w-3.5 h-3.5 text-amber-500" /> Perlu Perbaikan
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-neutral-700 bg-neutral-50 border border-neutral-200 rounded">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] md:text-xs font-bold text-neutral-700 bg-neutral-50 border border-neutral-200 rounded">
                         <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" /> Menunggu {currentApprover?.userName}
                       </span>
                     )}
@@ -262,35 +261,35 @@ export const TrackingView: React.FC = () => {
                 </div>
 
                 {isNeedsRevision && filter !== 'related' && (
-                  <div className="mt-4 p-4 bg-amber-50/50 border border-amber-100 rounded-lg">
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                  <div className="mt-3 md:mt-4 p-3 md:p-4 bg-amber-50/60 border border-amber-100 rounded-lg">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="text-sm font-semibold text-neutral-900 mb-1">Catatan dari {req.lastRevisionRequestedBy || currentApprover?.userName}</div>
-                        <p className="text-xs text-neutral-600">{req.notes || (lastNote ? `Hal ${lastNote.pageNumber}: ${lastNote.content}` : 'Terdapat perbaikan yang diperlukan.')}</p>
+                        <div className="text-xs md:text-sm font-bold text-neutral-900 mb-0.5">Catatan dari {req.lastRevisionRequestedBy || currentApprover?.userName}</div>
+                        <p className="text-[11px] md:text-xs text-neutral-600">{req.notes || (lastNote ? `Hal ${lastNote.pageNumber}: ${lastNote.content}` : 'Terdapat perbaikan yang diperlukan.')}</p>
                       </div>
-                      <button onClick={() => { setSubmittingRevisionReq(req); setRequesterNote(''); setNewPdfFile(null); setRevisionMode('with_file'); }} className="px-4 py-2 text-xs font-medium text-white bg-[#0B1A28] hover:bg-[#152D40] rounded-lg transition-colors shrink-0 whitespace-nowrap shadow-sm">
+                      <button onClick={() => { setSubmittingRevisionReq(req); setRequesterNote(''); setNewPdfFile(null); setRevisionMode('with_file'); }} className="px-4 py-2 text-[11px] md:text-xs font-bold text-white bg-[#0B1A28] hover:bg-[#152D40] rounded-lg transition-colors shrink-0 whitespace-nowrap shadow-sm">
                         Tindak Lanjut
                       </button>
                     </div>
                   </div>
                 )}
 
-                <div className="py-4">
-                  <div className="flex gap-3 overflow-x-auto pb-2 hide-scrollbar">
+                <div className="py-3 md:py-4">
+                  <div className="flex gap-2.5 md:gap-3 overflow-x-auto pb-2 hide-scrollbar">
                     {req.flow.map((step, idx) => {
                       const isActive = step.status === 'waiting' || step.status === 'needs_revision';
                       return (
-                        <div key={step.id} className={`flex-shrink-0 w-48 p-3 rounded-lg border flex flex-col ${isActive ? 'bg-white border-neutral-300 shadow-sm' : 'bg-neutral-50/50 border-neutral-200'}`}>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider">Tahap {idx + 1}</span>
+                        <div key={step.id} className={`flex-shrink-0 w-40 md:w-48 p-2.5 md:p-3 rounded-lg border flex flex-col ${isActive ? 'bg-white border-neutral-300 shadow-sm' : 'bg-neutral-50/50 border-neutral-200'}`}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[9px] md:text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Tahap {idx + 1}</span>
                             {getStepIcon(step.status)}
                           </div>
-                          <div className="font-semibold text-sm text-neutral-900 truncate">{step.userName}</div>
-                          <div className="text-[11px] text-neutral-500 truncate mb-3 flex-1">{step.roleTitle}</div>
+                          <div className="font-bold text-xs md:text-sm text-neutral-900 truncate">{step.userName}</div>
+                          <div className="text-[10px] md:text-[11px] text-neutral-500 truncate mb-2.5 flex-1">{step.roleTitle}</div>
                           <div className="flex items-center justify-between pt-2 border-t border-neutral-100 mt-auto">
                             {getStepBadge(step)}
                             {step.signedAt && (
-                              <span className="text-[9px] font-medium text-neutral-400 tracking-tight">
+                              <span className="text-[8px] md:text-[9px] font-semibold text-neutral-400 tracking-tight">
                                 {new Date(step.signedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} • {new Date(step.signedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
                               </span>
                             )}
@@ -302,15 +301,15 @@ export const TrackingView: React.FC = () => {
                 </div>
 
                 <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs text-neutral-500 truncate max-w-[200px] sm:max-w-sm">
+                  <div className="flex items-center gap-1.5 md:gap-2 text-[10px] md:text-xs font-semibold text-neutral-500 truncate max-w-[180px] sm:max-w-sm bg-neutral-50 px-2 py-1 rounded">
                     <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
                     <span className="truncate">{req.pdfFileName} {req.prPdfFileName ? `+ PR` : ''} {req.poPdfFileName ? `+ PO` : ''}</span>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button onClick={() => { setSelectedRequestForDetail(req); setDetailActiveDocType('WO'); }} className="px-3 py-1.5 text-xs font-medium text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded transition-colors border border-transparent hover:border-neutral-200">
+                  <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+                    <button onClick={() => { setSelectedRequestForDetail(req); setDetailActiveDocType('WO'); }} className="px-2.5 py-1.5 text-[11px] md:text-xs font-bold text-neutral-600 hover:text-neutral-900 bg-neutral-50 hover:bg-neutral-100 rounded-md transition-colors">
                       Detail Riwayat
                     </button>
-                    <button onClick={() => setFullScreenPreviewRequest(req)} className="px-3 py-1.5 text-xs font-medium text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded transition-colors border border-transparent hover:border-neutral-200">
+                    <button onClick={() => setFullScreenPreviewRequest(req)} className="px-2.5 py-1.5 text-[11px] md:text-xs font-bold text-neutral-600 hover:text-neutral-900 bg-neutral-50 hover:bg-neutral-100 rounded-md transition-colors">
                       Buka Dokumen
                     </button>
                   </div>
@@ -323,55 +322,55 @@ export const TrackingView: React.FC = () => {
 
       {/* MODAL: SUBMIT REVISI */}
       {submittingRevisionReq && (
-        <div className="fixed inset-0 z-[60] bg-neutral-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between mb-5 pb-3 border-b border-neutral-100">
+        <div className="fixed inset-0 z-[60] bg-neutral-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 md:p-6 shadow-xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-neutral-100">
               <div>
-                <h3 className="text-sm font-bold text-neutral-900">Kirim Penjelasan / Revisi</h3>
+                <h3 className="text-sm font-bold text-neutral-900">Kirim Perbaikan</h3>
                 <span className="text-[10px] text-neutral-500 font-mono mt-0.5 block">{submittingRevisionReq.id}</span>
               </div>
-              <button onClick={() => setSubmittingRevisionReq(null)} className="text-neutral-400 hover:text-neutral-800 p-1 hover:bg-neutral-100 rounded">
-                <X className="w-4 h-4" />
+              <button onClick={() => setSubmittingRevisionReq(null)} className="text-neutral-400 hover:text-neutral-800 p-1 hover:bg-neutral-100 rounded-lg">
+                <X className="w-4 h-4 md:w-5 md:h-5" />
               </button>
             </div>
             
-            <div className="space-y-5">
+            <div className="space-y-4 md:space-y-5">
               <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-2">Tindakan Perbaikan</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className={`flex flex-col gap-1 p-3 border rounded-xl cursor-pointer transition-all ${revisionMode === 'wording_only' ? 'border-[#0B1A28] bg-neutral-50/50 ring-1 ring-[#0B1A28]' : 'border-neutral-200 hover:border-neutral-300 bg-white'}`}>
+                <label className="block text-[11px] md:text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Tindakan Perbaikan</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
+                  <label className={`flex flex-col gap-1 p-2.5 md:p-3 border rounded-xl cursor-pointer transition-all ${revisionMode === 'wording_only' ? 'border-[#0B1A28] bg-neutral-50/50 ring-1 ring-[#0B1A28]' : 'border-neutral-200 hover:border-neutral-300 bg-white'}`}>
                     <div className="flex items-center gap-2">
                       <input type="radio" name="revisionMode" value="wording_only" checked={revisionMode === 'wording_only'} onChange={() => { setRevisionMode('wording_only'); setNewPdfFile(null); }} className="accent-[#0B1A28] cursor-pointer" />
-                      <span className="text-xs font-semibold text-neutral-900">Hanya Balasan</span>
+                      <span className="text-xs md:text-sm font-bold text-neutral-900">Hanya Balasan</span>
                     </div>
-                    <span className="text-[10px] text-neutral-500 pl-5">Kirim penjelasan tanpa mengganti dokumen.</span>
+                    <span className="text-[9px] md:text-[10px] text-neutral-500 pl-5 leading-relaxed">Kirim penjelasan tanpa mengganti dokumen.</span>
                   </label>
-                  <label className={`flex flex-col gap-1 p-3 border rounded-xl cursor-pointer transition-all ${revisionMode === 'with_file' ? 'border-[#0B1A28] bg-neutral-50/50 ring-1 ring-[#0B1A28]' : 'border-neutral-200 hover:border-neutral-300 bg-white'}`}>
+                  <label className={`flex flex-col gap-1 p-2.5 md:p-3 border rounded-xl cursor-pointer transition-all ${revisionMode === 'with_file' ? 'border-[#0B1A28] bg-neutral-50/50 ring-1 ring-[#0B1A28]' : 'border-neutral-200 hover:border-neutral-300 bg-white'}`}>
                     <div className="flex items-center gap-2">
                       <input type="radio" name="revisionMode" value="with_file" checked={revisionMode === 'with_file'} onChange={() => setRevisionMode('with_file')} className="accent-[#0B1A28] cursor-pointer" />
-                      <span className="text-xs font-semibold text-neutral-900">Unggah File</span>
+                      <span className="text-xs md:text-sm font-bold text-neutral-900">Unggah File</span>
                     </div>
-                    <span className="text-[10px] text-neutral-500 pl-5">Ganti dokumen dengan versi yang sudah direvisi.</span>
+                    <span className="text-[9px] md:text-[10px] text-neutral-500 pl-5 leading-relaxed">Ganti dokumen dengan versi yang direvisi.</span>
                   </label>
                 </div>
               </div>
               
               {revisionMode === 'with_file' && (
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-2">File Revisi (PDF)</label>
-                  <div onClick={() => document.getElementById('revision-file-upload')?.click()} className="border border-dashed border-neutral-300 rounded-xl p-4 bg-neutral-50 hover:bg-neutral-100 transition-colors cursor-pointer text-center">
+                <div className="animate-in fade-in slide-in-from-top-2">
+                  <label className="block text-[11px] md:text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">File Revisi (PDF)</label>
+                  <div onClick={() => document.getElementById('revision-file-upload')?.click()} className="border-2 border-dashed border-neutral-200 rounded-xl p-4 bg-neutral-50 hover:bg-neutral-100 hover:border-neutral-300 transition-colors cursor-pointer text-center">
                     <input id="revision-file-upload" type="file" accept="application/pdf" onChange={handleFileUpload} className="hidden" />
                     {newPdfFile ? (
-                      <div className="flex flex-col items-center justify-center gap-1.5 text-emerald-700">
-                        <CheckCircle className="w-5 h-5 mb-1" />
+                      <div className="flex flex-col items-center justify-center gap-1 text-emerald-700">
+                        <CheckCircle className="w-5 h-5 mb-0.5" />
                         <span className="text-xs font-bold truncate max-w-full px-2">{newPdfFile.name}</span>
-                        <span className="text-[10px] text-emerald-600/80 font-medium">File berhasil dilampirkan</span>
+                        <span className="text-[9px] md:text-[10px] text-emerald-600/80 font-semibold">File berhasil dilampirkan</span>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center justify-center text-neutral-500">
-                        <Upload className="w-5 h-5 mb-2 text-neutral-400" />
-                        <span className="text-xs font-medium text-neutral-700">Pilih file PDF revisi</span>
-                        <span className="text-[10px] mt-0.5">atau seret file ke sini</span>
+                        <Upload className="w-5 h-5 mb-1.5 text-neutral-400" />
+                        <span className="text-xs md:text-sm font-bold text-neutral-700">Pilih file PDF revisi</span>
+                        <span className="text-[9px] md:text-[10px] mt-0.5">atau ketuk di sini</span>
                       </div>
                     )}
                   </div>
@@ -379,20 +378,20 @@ export const TrackingView: React.FC = () => {
               )}
               
               <div>
-                <label className="flex items-center justify-between text-xs font-semibold text-neutral-700 mb-1.5">
-                  <span>Catatan Balasan</span>
+                <label className="block text-[11px] md:text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">
+                  Catatan Balasan
                 </label>
-                <textarea value={requesterNote} onChange={e => setRequesterNote(e.target.value)} placeholder={revisionMode === 'with_file' ? "Contoh: Telah diperbaiki sesuai arahan..." : "Jelaskan mengapa file tidak diubah..."} rows={3} className={`w-full p-3 text-sm bg-white border rounded-xl text-neutral-900 transition-colors focus:outline-none focus:ring-1 focus:ring-[#0B1A28] ${revisionMode === 'wording_only' && !requesterNote.trim() && isSubmitting ? 'border-rose-300' : 'border-neutral-200'}`} />
+                <textarea value={requesterNote} onChange={e => setRequesterNote(e.target.value)} placeholder={revisionMode === 'with_file' ? "Contoh: Telah diperbaiki sesuai arahan..." : "Jelaskan mengapa file tidak diubah..."} rows={3} className={`w-full p-3 text-xs md:text-sm bg-white border rounded-xl text-neutral-900 transition-colors focus:outline-none focus:ring-1 focus:ring-[#0B1A28] resize-none ${revisionMode === 'wording_only' && !requesterNote.trim() && isSubmitting ? 'border-rose-300 ring-rose-300' : 'border-neutral-200'}`} />
               </div>
             </div>
             
-            <div className="mt-6 flex items-center justify-between">
-              <span className="text-[10px] text-neutral-400">
-                Langkah {submittingRevisionReq.currentStepIndex + 1} dari {submittingRevisionReq.flow.length}
+            <div className="mt-6 pt-4 border-t border-neutral-100 flex items-center justify-between">
+              <span className="text-[9px] md:text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">
+                Tahap {submittingRevisionReq.currentStepIndex + 1} / {submittingRevisionReq.flow.length}
               </span>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setSubmittingRevisionReq(null)} className="px-4 py-2 text-xs font-medium text-neutral-600 hover:bg-neutral-50 rounded-lg transition-colors">Batal</button>
-                <button type="button" onClick={handleConfirmSubmitRevision} disabled={isSubmitting || (revisionMode === 'wording_only' && !requesterNote.trim()) || (revisionMode === 'with_file' && !newPdfFile)} className="px-5 py-2 text-xs font-semibold text-white bg-[#0B1A28] hover:bg-[#152D40] rounded-lg disabled:opacity-40 transition-all flex items-center gap-1.5 shadow-sm">
+                <button type="button" onClick={() => setSubmittingRevisionReq(null)} className="px-4 py-2 text-xs font-bold text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors">Batal</button>
+                <button type="button" onClick={handleConfirmSubmitRevision} disabled={isSubmitting || (revisionMode === 'wording_only' && !requesterNote.trim()) || (revisionMode === 'with_file' && !newPdfFile)} className="px-4 py-2 text-xs font-bold text-white bg-[#0B1A28] hover:bg-[#152D40] rounded-lg disabled:opacity-50 transition-all flex items-center gap-1.5 shadow-sm">
                   {isSubmitting ? 'Memproses...' : 'Kirim Balasan'}
                 </button>
               </div>
@@ -403,122 +402,118 @@ export const TrackingView: React.FC = () => {
 
       {/* DETAIL MODAL MINIMALIS */}
       {selectedRequestForDetail && (
-        <div className="fixed inset-0 z-50 bg-neutral-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 border border-neutral-200/60">
-            <div className="px-6 py-5 flex items-start justify-between bg-white border-b border-neutral-100">
-              <div>
-                <span className="text-[10px] font-mono font-medium text-neutral-400 block mb-1">{selectedRequestForDetail.id}</span>
-                <h3 className="text-lg font-bold text-neutral-900 leading-tight">{selectedRequestForDetail.title}</h3>
+        <div className="fixed inset-0 z-50 bg-neutral-900/50 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[95vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+            
+            <div className="px-4 md:px-6 py-4 flex items-start justify-between bg-white border-b border-neutral-100 shrink-0">
+              <div className="min-w-0 pr-4">
+                <span className="text-[9px] md:text-[10px] font-mono font-bold text-neutral-400 block mb-0.5">{selectedRequestForDetail.id}</span>
+                <h3 className="text-base md:text-lg font-bold text-neutral-900 leading-tight truncate">{selectedRequestForDetail.title}</h3>
               </div>
-              <button onClick={() => setSelectedRequestForDetail(null)} className="p-1.5 text-neutral-400 hover:text-neutral-800 rounded-lg hover:bg-neutral-100 transition-colors">
+              <button onClick={() => setSelectedRequestForDetail(null)} className="p-1.5 shrink-0 text-neutral-400 hover:text-neutral-800 rounded-lg hover:bg-neutral-100 transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-neutral-50/30">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 bg-neutral-50/50">
               {showNotesSection && (
                 <div>
-                  <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-3">Catatan & Riwayat Perbaikan</h4>
-                  <div className="space-y-3">
+                  <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-2.5">Catatan & Riwayat Perbaikan</h4>
+                  <div className="space-y-2.5">
                     {selectedRequestForDetail.revisionHistory?.map(rev => (
-                      <div key={rev.id} className="p-4 rounded-xl border bg-amber-50/50 border-amber-200/70 text-xs">
+                      <div key={rev.id} className="p-3 md:p-4 rounded-xl border bg-amber-50/50 border-amber-200/70 text-xs">
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-bold text-neutral-900">Diminta oleh {rev.requestedByUserName} ({rev.requestedByUserRole})</span>
-                          <span className="text-[10px] text-neutral-400 font-medium">
-                            {new Date(rev.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          <span className="font-bold text-neutral-900">Dari {rev.requestedByUserName} <span className="hidden sm:inline">({rev.requestedByUserRole})</span></span>
+                          <span className="text-[9px] md:text-[10px] text-neutral-400 font-medium whitespace-nowrap">
+                            {new Date(rev.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
                           </span>
                         </div>
-                        <p className="text-neutral-700 font-medium mb-2">{rev.generalNote}</p>
+                        <p className="text-neutral-700 font-medium mb-2 leading-relaxed">{rev.generalNote}</p>
                         {rev.resolvedAt && (
-                          <div className="mt-2 pt-2 border-t border-amber-200/50 text-[11px] text-neutral-600">
-                            <span className="font-semibold text-emerald-700">Telah dibalas oleh {rev.resolvedByRequesterName}:</span> "{rev.requesterResponseNote}"
+                          <div className="mt-2 pt-2 border-t border-amber-200/50 text-[10px] md:text-[11px] text-neutral-600 leading-relaxed">
+                            <span className="font-bold text-emerald-700">Dibalas oleh {rev.resolvedByRequesterName}:</span> "{rev.requesterResponseNote}"
                           </div>
                         )}
                       </div>
                     ))}
                     {selectedRequestForDetail.auditNotes?.map(note => (
-                      <div key={note.id} className="p-4 rounded-xl border bg-white border-neutral-200/70 text-xs">
+                      <div key={note.id} className="p-3 md:p-4 rounded-xl border bg-white border-neutral-200/70 text-xs shadow-sm">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="font-bold text-neutral-900">{note.authorName} (Halaman {note.pageNumber})</span>
-                          <span className="text-[10px] text-neutral-400 font-medium">
-                            {new Date(note.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          <span className="font-bold text-neutral-900">{note.authorName} <span className="text-neutral-500 font-semibold">(Hal {note.pageNumber})</span></span>
+                          <span className="text-[9px] md:text-[10px] text-neutral-400 font-medium whitespace-nowrap">
+                            {new Date(note.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
                           </span>
                         </div>
-                        <p className="text-neutral-600">{note.content}</p>
+                        <p className="text-neutral-600 leading-relaxed">{note.content}</p>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-
+              
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-3">
-                  <div className="flex items-center gap-4">
-                    <button onClick={() => setDetailActiveDocType('WO')} className={`text-xs font-semibold pb-1 transition-all ${detailActiveDocType === 'WO' ? 'border-b-2 border-neutral-900 text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}>
+                  <div className="flex items-center gap-3 overflow-x-auto hide-scrollbar pb-1">
+                    <button onClick={() => setDetailActiveDocType('WO')} className={`text-[11px] md:text-xs font-bold pb-1 transition-all whitespace-nowrap ${detailActiveDocType === 'WO' ? 'border-b-2 border-neutral-900 text-neutral-900' : 'text-neutral-400 hover:text-neutral-700'}`}>
                       {selectedRequestForDetail.category === 'Design' ? 'Design Drawing' : 'WO Existing'}
                     </button>
                     {selectedRequestForDetail.prPdfDataUrl && (
-                      <button onClick={() => setDetailActiveDocType('PR')} className={`text-xs font-semibold pb-1 transition-all ${detailActiveDocType === 'PR' ? 'border-b-2 border-neutral-900 text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}>
+                      <button onClick={() => setDetailActiveDocType('PR')} className={`text-[11px] md:text-xs font-bold pb-1 transition-all whitespace-nowrap ${detailActiveDocType === 'PR' ? 'border-b-2 border-neutral-900 text-neutral-900' : 'text-neutral-400 hover:text-neutral-700'}`}>
                         Purch. Request
                       </button>
                     )}
                     {selectedRequestForDetail.poPdfDataUrl && (
-                      <button onClick={() => setDetailActiveDocType('PO')} className={`text-xs font-semibold pb-1 transition-all ${detailActiveDocType === 'PO' ? 'border-b-2 border-neutral-900 text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}>
+                      <button onClick={() => setDetailActiveDocType('PO')} className={`text-[11px] md:text-xs font-bold pb-1 transition-all whitespace-nowrap ${detailActiveDocType === 'PO' ? 'border-b-2 border-neutral-900 text-neutral-900' : 'text-neutral-400 hover:text-neutral-700'}`}>
                         Purch. Order
                       </button>
                     )}
                   </div>
-                  <div className="flex items-center gap-4">
-                    <a href={rawDetailUrl} download={detailActiveDocType === 'PR' ? `PR_${selectedRequestForDetail.prPdfFileName}` : detailActiveDocType === 'PO' ? `PO_${selectedRequestForDetail.poPdfFileName}` : `${selectedRequestForDetail.category === 'Design' ? 'Design' : 'WO'}_${selectedRequestForDetail.pdfFileName}`} className="text-[11px] text-neutral-500 hover:text-neutral-900 flex items-center gap-1.5 font-medium transition-colors">
-                      <Download className="w-3.5 h-3.5" /> Unduh File
+                  <div className="flex items-center gap-3 md:gap-4 shrink-0 bg-neutral-100/80 px-3 py-1.5 rounded-lg sm:bg-transparent sm:px-0 sm:py-0">
+                    <a href={rawDetailUrl} download={detailActiveDocType === 'PR' ? `PR_${selectedRequestForDetail.prPdfFileName}` : detailActiveDocType === 'PO' ? `PO_${selectedRequestForDetail.poPdfFileName}` : `${selectedRequestForDetail.category === 'Design' ? 'Design' : 'WO'}_${selectedRequestForDetail.pdfFileName}`} className="text-[10px] md:text-[11px] text-neutral-600 hover:text-neutral-900 flex items-center gap-1 font-bold transition-colors">
+                      <Download className="w-3.5 h-3.5" /> Unduh
                     </a>
                     <span className="text-neutral-300">|</span>
-                    <button type="button" onClick={() => { setFullScreenPreviewRequest(selectedRequestForDetail); setSelectedRequestForDetail(null); }} className="text-[11px] text-neutral-500 hover:text-neutral-900 flex items-center gap-1.5 font-medium transition-colors">
+                    <button type="button" onClick={() => { setFullScreenPreviewRequest(selectedRequestForDetail); setSelectedRequestForDetail(null); }} className="text-[10px] md:text-[11px] text-neutral-600 hover:text-neutral-900 flex items-center gap-1 font-bold transition-colors">
                       <Maximize2 className="w-3.5 h-3.5" /> Layar Penuh
                     </button>
-                    <a href={rawDetailUrl} target="_blank" rel="noreferrer" className="text-[11px] text-neutral-500 hover:text-neutral-900 flex items-center gap-1.5 font-medium transition-colors">
-                      <ExternalLink className="w-3.5 h-3.5" /> Buka di Tab Baru
-                    </a>
                   </div>
                 </div>
                 
-                <div className="w-full h-[400px] border border-neutral-200/80 rounded-xl overflow-hidden bg-white shadow-sm">
+                <div className="w-full h-[300px] md:h-[400px] border border-neutral-200/80 rounded-xl overflow-hidden bg-white shadow-sm">
                   {detailBlobUrl ? (
-                    <iframe
-                      src={`${detailBlobUrl}#toolbar=0&navpanes=0&view=FitH`}
-                      title="PDF Preview"
-                      className="w-full h-full border-0"
-                    />
+                    <iframe src={`${detailBlobUrl}#toolbar=0&navpanes=0&view=FitH`} title="PDF Preview" className="w-full h-full border-0" />
                   ) : (
                     <div className="flex h-full items-center justify-center">
-                      <div className="w-8 h-8 border-[3px] border-neutral-200 border-t-[#0B1A28] rounded-full animate-spin" />
+                      <div className="w-6 h-6 md:w-8 md:h-8 border-[3px] border-neutral-200 border-t-[#0B1A28] rounded-full animate-spin" />
                     </div>
                   )}
                 </div>
               </div>
 
               <div>
-                <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-3">Histori Otorisasi</h4>
-                <div className="border border-neutral-200/80 rounded-xl overflow-hidden divide-y divide-neutral-100/60 bg-white">
+                <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-2.5">Histori Otorisasi</h4>
+                <div className="border border-neutral-200/80 rounded-xl overflow-hidden divide-y divide-neutral-100 bg-white shadow-sm">
                   {selectedRequestForDetail.flow.map(step => (
-                    <div key={step.id} className="p-4 flex items-center justify-between text-xs hover:bg-neutral-50/50 transition-colors">
-                      <div className="flex items-center gap-4">
-                        <div className="w-9 h-9 rounded-full bg-neutral-100 flex items-center justify-center font-bold text-neutral-600 border border-neutral-200/80 shrink-0">{step.userName[0]}</div>
+                    <div key={step.id} className="p-3 md:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-neutral-50/50 transition-colors">
+                      <div className="flex items-center gap-3 md:gap-4">
+                        <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-neutral-100 flex items-center justify-center font-bold text-neutral-600 border border-neutral-200/80 shrink-0">
+                          {step.userName[0]}
+                        </div>
                         <div>
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="font-bold text-neutral-900">{step.userName}</span>
-                            <span className="text-neutral-300">•</span>
-                            <span className="text-neutral-600 font-medium">{step.roleTitle}</span>
+                          <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mb-0.5">
+                            <span className="font-bold text-neutral-900 text-xs md:text-sm">{step.userName}</span>
+                            <span className="text-neutral-300 hidden sm:inline">•</span>
+                            <span className="text-neutral-500 font-semibold text-[10px] md:text-xs bg-neutral-100 px-1.5 py-0.5 rounded">{step.roleTitle}</span>
                           </div>
-                          <div className="text-[10px] text-neutral-500 font-medium">
+                          <div className="text-[9px] md:text-[10px] text-neutral-500 font-medium mt-1">
                             {step.status === 'approved' ? `Disetujui pada ${new Date(step.signedAt || '').toLocaleString('id-ID')}` : step.status === 'waiting' ? 'Sedang tahap review' : step.status === 'needs_revision' ? 'Memberikan catatan revisi' : 'Menunggu giliran'}
                           </div>
                         </div>
                       </div>
-                      <div>
+                      <div className="pl-11 sm:pl-0">
                         {step.signatureUrl ? (
-                          <img src={step.signatureUrl} alt="TTD" className="h-8 w-auto min-w-[60px] object-contain opacity-90" />
-                        ) : <span className="text-neutral-300 text-xs italic">Belum TTD</span>}
+                          <img src={step.signatureUrl} alt="TTD" className="h-6 md:h-8 w-auto min-w-[50px] object-contain opacity-90 mix-blend-multiply" />
+                        ) : <span className="text-neutral-300 text-[10px] md:text-xs italic font-semibold">Belum TTD</span>}
                       </div>
                     </div>
                   ))}
