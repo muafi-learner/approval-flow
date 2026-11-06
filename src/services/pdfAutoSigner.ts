@@ -23,31 +23,35 @@ export interface AutoSignResult {
 
 function drawDigitalStamp(
   page: PDFPage, signatureImage: PDFImage, approver: ApproverStep, requestId: string,
-  x: number, y: number, fontRegular: PDFFont, fontBold: PDFFont, category: 'Design' | 'WO Existing'
+  centerX: number, // Koordinat X dari user kini menjadi titik TENGAH
+  baseY: number,   // Koordinat Y dari user (118) kini menjadi patokan BAWAH
+  fontRegular: PDFFont, fontBold: PDFFont, category: 'Design' | 'WO Existing'
 ) {
   if (category === 'Design') {
-    // Dimensi untuk masing-masing kolom stempel Design
-    const DESIGN_STAMP_W = 45; 
-    const DESIGN_STAMP_H = 65; 
+    // =====================================================================
+    // 1. ATUR POSISI Y TANDA TANGAN
+    // Diturunkan 10 poin sesuai permintaan (sebelumnya + 36, sekarang + 26)
+    // =====================================================================
+    const ySignature = baseY + 20; 
+    
+    // 2. UKURAN CORETAN TANDA TANGAN 
+    const maxSigW = 35; // Lebar maksimal ttd agar tidak menabrak garis kolom
+    const maxSigH = 35; 
     
     const sigDims = signatureImage.scale(1.0);
     const aspect = sigDims.width / Math.max(1, sigDims.height);
-    
-    const maxSigW = DESIGN_STAMP_W - 8; 
-    const maxSigH = DESIGN_STAMP_H - 20; 
-    
     let sigW = maxSigW; 
     let sigH = sigW / aspect;
     if (sigH > maxSigH) { sigH = maxSigH; sigW = sigH * aspect; }
     
-    const signatureYOffset = 8;
-    
+    // 3. GAMBAR TANDA TANGAN
     page.drawImage(signatureImage, {
-      x: x + (DESIGN_STAMP_W - sigW) / 2,
-      y: y + DESIGN_STAMP_H - sigH - 4 + signatureYOffset,
+      x: centerX - (sigW / 2), 
+      y: ySignature,
       width: sigW, height: sigH
     });
     
+    // Siapkan Teks
     const firstName = approver.userName.trim().split(/\s+/)[0].toUpperCase();
     const roleWords = approver.roleTitle.trim().split(/\s+/);
     const roleAcronym = roleWords.length > 1
@@ -58,11 +62,24 @@ function drawDigitalStamp(
     const nameWidth = fontBold.widthOfTextAtSize(firstName, nameSize);
     const roleWidth = fontRegular.widthOfTextAtSize(roleAcronym, roleSize);
     
-    page.drawText(firstName, { x: x + (DESIGN_STAMP_W - nameWidth) / 2, y: y + 12, size: nameSize, font: fontBold, color: rgb(0, 0, 0.5) });
-    page.drawText(roleAcronym, { x: x + (DESIGN_STAMP_W - roleWidth) / 2, y: y + 5, size: roleSize, font: fontRegular, color: rgb(0, 0, 0.5) });
+    // 4. GAMBAR TEKS NAMA (Persis di titik Y 118)
+    page.drawText(firstName, { 
+      x: centerX - (nameWidth / 2), 
+      y: baseY, 
+      size: nameSize, font: fontBold, color: rgb(0, 0, 0.5) 
+    });
     
-    return { width: DESIGN_STAMP_W, height: DESIGN_STAMP_H };
+    // 5. GAMBAR TEKS JABATAN (Sedikit di bawah nama)
+    page.drawText(roleAcronym, { 
+      x: centerX - (roleWidth / 2), 
+      y: baseY - 8, 
+      size: roleSize, font: fontRegular, color: rgb(0, 0, 0.5) 
+    });
+    
+    return { width: 40, height: 65 };
   } else {
+    // LAYOUT UNTUK WO EXISTING (Tidak diubah)
+    const x = centerX; const y = baseY; 
     const STAMP_W = 130; const STAMP_H = 65;
     page.drawRectangle({ x, y, width: STAMP_W, height: STAMP_H, color: rgb(1, 1, 1), opacity: 1.0, borderColor: rgb(0.3, 0.3, 0.3), borderOpacity: 1.0, borderWidth: 1 });
     
@@ -94,6 +111,7 @@ export async function executeOneClickAutoSign(
 ): Promise<AutoSignResult> {
   try {
     let pdfBytes: Uint8Array;
+    
     if (typeof pdfSource === 'string') {
       if (pdfSource.startsWith('data:')) {
         const base64Data = pdfSource.split(',')[1];
@@ -124,7 +142,7 @@ export async function executeOneClickAutoSign(
     const signedPagesList: number[] = [];
     let lastFittedCoords = { x: 0, y: 0, width: 0, height: 0 };
     let totalSigned = 0;
-
+    
     if (category === 'WO Existing') {
       const STAMP_W = 130; const STAMP_H = 65;
       const GAP_X = 10; const GAP_Y = 15;
@@ -167,13 +185,10 @@ export async function executeOneClickAutoSign(
         totalSigned++;
       }
     } else {
-      // PENYESUAIAN STAMPEL DESIGN (4 Kolom)
-      const DESIGN_STAMP_W = 45; 
-      const DESIGN_STAMP_H = 65; 
-      const GAP_X = 2; // Jarak antar kolom
-      const rightMargin = 30; // Jarak dari ujung kanan kertas
-      const bottomMargin = 75; // Jarak dari bawah kertas
-
+      // MENGGUNAKAN KOORDINAT PASTI
+      const DESIGN_EXACT_X_COORDS = [988, 1026, 1061, 1101]; 
+      const EXACT_Y_COORD = 118; 
+      
       const rawTargetSlots: DetectedSlot[] = [];
       const pages = pdfDoc.getPages();
       let lastPageIndex = pages.length - 1;
@@ -184,23 +199,17 @@ export async function executeOneClickAutoSign(
         rawTargetSlots.push(currentApprover.detectedSlot);
       } else {
         const approverIndex = allSteps.findIndex(s => s.id === currentApprover.id);
-        // Memastikan index tidak melebihi 3 (maksimal 4 approver / 4 kolom)
         const safeIndex = Math.min(Math.max(0, approverIndex), 3); 
         const pagesToStamp = selectedPages.length > 0 ? selectedPages : [lastPageIndex + 1];
         
         pagesToStamp.forEach(pageNum => {
-          const targetPage = pages[pageNum - 1];
-          const { width: pageWidth } = targetPage.getSize();
-          
-          // Mulai menggambar kotak dari arah kanan
-          const startX = pageWidth - rightMargin - (4 * DESIGN_STAMP_W) - (3 * GAP_X);
-          const boxX = startX + (safeIndex * (DESIGN_STAMP_W + GAP_X));
-          const boxY = bottomMargin;
+          const exactX = DESIGN_EXACT_X_COORDS[safeIndex];
+          const exactY = EXACT_Y_COORD;
           
           rawTargetSlots.push({
             pageIndex: pageNum - 1, pageNumber: pageNum, slotType: 'authorization_box',
-            isFooter: true, hasExplicitBox: false, slotLabel: `Posisi Default Design`,
-            x: boxX, y: boxY, width: DESIGN_STAMP_W, height: DESIGN_STAMP_H,
+            isFooter: true, hasExplicitBox: false, slotLabel: `Exact Coordinate Design`,
+            x: exactX, y: exactY, width: 40, height: 65,
             name: currentApprover.userName, role: currentApprover.roleTitle, confidence: 'layout_matrix',
           });
         });
@@ -211,6 +220,7 @@ export async function executeOneClickAutoSign(
         const targetPage = pages[pageIndex];
         const safeX = typeof slot.x === 'number' ? slot.x : 40;
         const safeY = typeof slot.y === 'number' ? slot.y : 40;
+        
         const dims = drawDigitalStamp(targetPage, embeddedSignature, currentApprover, requestId, safeX, safeY, fontRegular, fontBold, category);
         const pNum = pageIndex + 1;
         
@@ -222,6 +232,7 @@ export async function executeOneClickAutoSign(
     
     signedPagesList.sort((a, b) => a - b);
     const modifiedBytes = await pdfDoc.save();
+    
     const blob = new Blob([modifiedBytes as unknown as BlobPart], { type: 'application/pdf' });
     const signedPdfUrl = URL.createObjectURL(blob);
     
