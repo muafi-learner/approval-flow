@@ -24,7 +24,10 @@ const PdfPageRenderer: React.FC<{ pdf: any; pageNumber: number; scale: number }>
     pdf.getPage(pageNumber).then((page: any) => {
       if (!isMounted) return;
       
-      const viewport = page.getViewport({ scale: scale }); 
+      // KUNCI KETAJAMAN HD (TRUE NATIVE RESOLUTION)
+      const pixelRatio = window.devicePixelRatio || 1;
+      const viewport = page.getViewport({ scale: scale * pixelRatio }); 
+      
       const canvas = canvasRef.current;
       if (!canvas) return;
       
@@ -56,8 +59,18 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
   
   const [pdfDocObj, setPdfDocObj] = useState<any>(null);
   
-  const [qualityMode, setQualityMode] = useState<'SD' | 'HD'>('SD');
-  const renderScale = qualityMode === 'HD' ? 3.0 : 1.0;
+  // STATE DETEKSI LAYAR (Desktop vs Mobile)
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
+  
+  useEffect(() => {
+    const handleResize = () => setIsDesktop(window.innerWidth >= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // LOGIKA RENDER SCALE BARU (LANGSUNG HD, TANPA TOMBOL)
+  // Desktop: 3.0 (Sangat Tajam) | Mobile: 2.0 (Tajam tapi hemat RAM HP)
+  const renderScale = isDesktop ? 3.0 : 2.0;
 
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [downloadError, setDownloadError] = useState<boolean>(false);
@@ -87,7 +100,6 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
       setDownloadProgress(0);
       setDownloadError(false);
       setPdfDocObj(null);
-      setQualityMode('SD');
       
       try {
         if (activeUrl.startsWith('data:')) {
@@ -176,7 +188,7 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
     <>
       <div className="fixed inset-0 z-50 bg-neutral-100 flex flex-col animate-in fade-in duration-150">
         
-        {/* HEADER VIEWER: GAYA TEKS BERSIH TANPA BOX/EMOJI */}
+        {/* HEADER VIEWER (Tombol Kualitas Dihapus) */}
         <header className="h-14 px-4 sm:px-6 bg-white border-b border-neutral-200 flex items-center justify-between shrink-0 z-20">
           <div className="flex items-center gap-3 sm:gap-5 overflow-x-auto hide-scrollbar">
             <button onClick={() => {setActiveDocType('WO'); setActiveUrl(request.pdfDataUrl);}} className={`whitespace-nowrap text-xs font-medium transition-colors ${activeDocType === 'WO' ? 'text-neutral-900 font-bold' : 'text-neutral-400 hover:text-neutral-900'}`}>
@@ -194,20 +206,7 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
             )}
           </div>
 
-          {/* KANAN: TOMBOL SD/HD TANPA BOX & TOMBOL TUTUP */}
-          <div className="flex items-center gap-4 shrink-0 ml-3">
-            {pdfDocObj && (
-              <button 
-                onClick={() => setQualityMode(prev => prev === 'SD' ? 'HD' : 'SD')}
-                className={`text-xs font-medium transition-colors ${
-                  qualityMode === 'HD' 
-                    ? 'text-neutral-900 font-bold' 
-                    : 'text-neutral-400 hover:text-neutral-900'
-                }`}
-              >
-                {qualityMode}
-              </button>
-            )}
+          <div className="flex items-center shrink-0 ml-3">
             <button onClick={onClose} className="text-neutral-400 hover:text-neutral-900 transition-colors p-1">
               <X className="w-5 h-5" />
             </button>
@@ -216,13 +215,12 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
 
         <div className="flex-1 flex overflow-hidden relative">
           
-          {/* AREA KIRI: PDF VIEWER CANVAS NATIVE */}
           <main className="flex-1 bg-[#323639] relative flex flex-col">
             {pdfDocObj ? (
               <div className="flex-1 relative flex flex-col overflow-hidden">
                 <div className="flex-1 overflow-auto p-4 sm:p-8 flex flex-col items-center">
                   {Array.from({ length: pdfDocObj.numPages }, (_, i) => (
-                    <PdfPageRenderer key={`${i}-${qualityMode}`} pdf={pdfDocObj} pageNumber={i + 1} scale={renderScale} />
+                    <PdfPageRenderer key={`${i}-${isDesktop}`} pdf={pdfDocObj} pageNumber={i + 1} scale={renderScale} />
                   ))}
                 </div>
               </div>
@@ -256,7 +254,6 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
             )}
           </main>
 
-          {/* AREA KANAN / BOTTOM SHEET: SIDEBAR CATATAN */}
           <aside 
             className={`bg-white flex flex-col shrink-0 z-40 transition-all duration-300 
               ${showMobileNotes 
@@ -321,7 +318,6 @@ export const FullScreenPdfViewer: React.FC<{request: ApprovalRequest; onClose: (
           </aside>
         </div>
 
-        {/* BOTTOM ACTION BAR RATA (FLAT) */}
         {!showMobileNotes && (
           <div className="md:hidden bg-white border-t border-neutral-200 p-3 shrink-0 flex items-center justify-center z-40 relative">
             <button 
